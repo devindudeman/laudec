@@ -4,16 +4,28 @@ See everything Claude Code does. One binary. One command.
 
 laudec wraps Claude Code with a transparent proxy, OTEL collector, and web dashboard — giving you full visibility into every API call, token, tool use, and prompt that flows through a session.
 
-## Quick Start
+## Install
+
+**One-liner** (requires git, Rust, and Node.js):
 
 ```bash
-# Install (requires Rust toolchain)
-git clone https://github.com/devinbernosky/laudec.git
+curl -fsSL https://raw.githubusercontent.com/devindudeman/laudec/main/install.sh | bash
+```
+
+**Or manually:**
+
+```bash
+git clone https://github.com/devindudeman/laudec.git
 cd laudec
 cd dashboard && npm install && npm run build && cd ..
 cargo install --path .
+```
 
-# Run
+Works on **Linux** and **macOS**. Requires [Claude Code](https://docs.anthropic.com/en/docs/claude-code) installed.
+
+## Quick Start
+
+```bash
 cd your-project/
 laudec .
 ```
