@@ -225,9 +225,9 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
 .tok-pill.cost { background: var(--surface); color: var(--fg); border-color: var(--fg); font-weight: 700; }
 
 .turn-tools { border-top: 1px solid #eee; }
-.tool-op { display: flex; align-items: baseline; gap: 8px; padding: 4px 12px 4px 24px;
-  font-size: 11px; border-bottom: 1px solid #f5f5f0; }
+.tool-op { padding: 4px 12px 4px 24px; font-size: 11px; border-bottom: 1px solid #f5f5f0; }
 .tool-op:last-child { border-bottom: none; }
+.tool-op-row { display: flex; align-items: baseline; gap: 8px; }
 .tool-op-icon { font-family: var(--font); font-weight: 700; width: 12px; text-align: center; flex-shrink: 0; }
 .tool-decision-op .tool-op-icon { color: var(--muted); }
 .tool-ok .tool-op-icon { color: var(--ok); }
@@ -236,9 +236,9 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
 .tool-op-detail { color: var(--muted); flex: 1; }
 .tool-op-source { font-size: 10px; }
 .tool-op-error { color: var(--fail); font-size: 11px; padding: 2px 0 2px 20px; }
-.tool-op-params { margin-top: 2px; }
+.tool-op-params { margin: 4px 0 2px 20px; }
 .tool-op-params summary { font-size: 10px; color: var(--muted); cursor: pointer; text-transform: uppercase;
   letter-spacing: 0.5px; }
 .tool-op-params summary:hover { color: var(--fg); }
-.tool-op-params pre { font-size: 10px; padding: 4px 8px; background: #fafaf5; margin: 2px 0;
-  max-height: 200px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; }
+.tool-op-params pre { font-size: 11px; padding: 8px 10px; margin: 4px 0;
+  max-height: 300px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; }

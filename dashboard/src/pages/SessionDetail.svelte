@@ -413,35 +413,39 @@
                 {#each turn.toolOps as op}
                   {#if op.eventName === 'tool_decision'}
                     <div class="tool-op tool-decision-op">
-                      <span class="tool-op-icon">{op.attrs.decision === 'accept' || op.attrs.decision === 'approved' ? '>' : 'x'}</span>
-                      <span class="tool-op-name">{op.attrs.tool_name || '-'}</span>
-                      <span class="tool-op-detail">
-                        {op.attrs.decision || '-'}
-                        <span class="tool-op-source">({op.attrs.source || '-'})</span>
-                      </span>
+                      <div class="tool-op-row">
+                        <span class="tool-op-icon">{op.attrs.decision === 'accept' || op.attrs.decision === 'approved' ? '>' : 'x'}</span>
+                        <span class="tool-op-name">{op.attrs.tool_name || '-'}</span>
+                        <span class="tool-op-detail">
+                          {op.attrs.decision || '-'}
+                          <span class="tool-op-source">({op.attrs.source || '-'})</span>
+                        </span>
+                      </div>
                     </div>
                   {:else if op.eventName === 'tool_result'}
                     <div class="tool-op tool-result-op {op.attrs.success === 'true' ? 'tool-ok' : 'tool-fail'}">
-                      <span class="tool-op-icon">{op.attrs.success === 'true' ? '+' : '!'}</span>
-                      <span class="tool-op-name">{op.attrs.tool_name || '-'}</span>
-                      <span class="tool-op-detail">
-                        <span style="color: {op.attrs.success === 'true' ? 'var(--ok)' : 'var(--fail)'}; font-weight: 600">
-                          {op.attrs.success === 'true' ? 'OK' : 'FAIL'}
+                      <div class="tool-op-row">
+                        <span class="tool-op-icon">{op.attrs.success === 'true' ? '+' : '!'}</span>
+                        <span class="tool-op-name">{op.attrs.tool_name || '-'}</span>
+                        <span class="tool-op-detail">
+                          <span style="color: {op.attrs.success === 'true' ? 'var(--ok)' : 'var(--fail)'}; font-weight: 600">
+                            {op.attrs.success === 'true' ? 'OK' : 'FAIL'}
+                          </span>
+                          {#if op.attrs.duration_ms}
+                            &middot; {fmtMs(op.attrs.duration_ms)}
+                          {/if}
+                          {#if op.attrs.tool_result_size_bytes}
+                            &middot; {Number(op.attrs.tool_result_size_bytes) >= 1000 ? `${(Number(op.attrs.tool_result_size_bytes)/1000).toFixed(1)}KB` : `${op.attrs.tool_result_size_bytes}B`}
+                          {/if}
                         </span>
-                        {#if op.attrs.duration_ms}
-                          &middot; {fmtMs(op.attrs.duration_ms)}
-                        {/if}
-                        {#if op.attrs.tool_result_size_bytes}
-                          &middot; {Number(op.attrs.tool_result_size_bytes) >= 1000 ? `${(Number(op.attrs.tool_result_size_bytes)/1000).toFixed(1)}KB` : `${op.attrs.tool_result_size_bytes}B`}
-                        {/if}
-                      </span>
+                      </div>
                       {#if op.attrs.error}
                         <div class="tool-op-error">{op.attrs.error}</div>
                       {/if}
                       {#if op.attrs.tool_parameters}
                         <details class="tool-op-params">
                           <summary>parameters</summary>
-                          <pre>{tryPrettyJson(op.attrs.tool_parameters)}</pre>
+                          <pre class="json-hl">{@html prettyJsonHtml(op.attrs.tool_parameters)}</pre>
                         </details>
                       {/if}
                     </div>
