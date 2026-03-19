@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import Sessions from './pages/Sessions.svelte';
   import SessionDetail from './pages/SessionDetail.svelte';
+  import Config from './pages/Config.svelte';
 
   let route = $state({ page: 'sessions', id: null });
 
@@ -38,6 +39,6 @@
   {:else if route.page === 'session' && route.id}
     <SessionDetail id={route.id} />
   {:else if route.page === 'config'}
-    <div class="stub">Config viewer coming soon</div>
+    <Config />
   {/if}
 </div>

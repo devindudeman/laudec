@@ -26,6 +26,10 @@ export function fetchTools(id) {
   return get(`/api/sessions/${id}/tools`);
 }
 
+export function fetchConfig() {
+  return get('/api/config');
+}
+
 // Formatting helpers
 
 export function fmtDuration(secs) {

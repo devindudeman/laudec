@@ -411,11 +411,11 @@ async fn cmd_replay(session_id: &str) -> Result<()> {
 // ── dashboard ─────────────────────────────────────────────────────────
 
 async fn cmd_dashboard(project_path: &std::path::Path) -> Result<()> {
-    let cfg = config::Config::load(project_path)?;
+    let cfg_with_source = config::Config::load_with_source(project_path)?;
+    let port = cfg_with_source.config.dashboard.port;
     let database = open_db()?;
-    let port = cfg.dashboard.port;
     println!("Dashboard: http://127.0.0.1:{port}");
-    dashboard::start(database, port).await?;
+    dashboard::start(database, port, Arc::new(cfg_with_source)).await?;
     Ok(())
 }
 
@@ -473,8 +473,9 @@ async fn cmd_run(project_path: &std::path::Path, prompt: Option<&str>) -> Result
     if cfg.dashboard.enabled {
         let db_clone = database.clone();
         let port = cfg.dashboard.port;
+        let cfg_with_source = Arc::new(config::Config::load_with_source(project_path)?);
         tokio::spawn(async move {
-            if let Err(e) = dashboard::start(db_clone, port).await {
+            if let Err(e) = dashboard::start(db_clone, port, cfg_with_source).await {
                 tracing::error!("dashboard: {e}");
             }
         });

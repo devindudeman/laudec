@@ -315,3 +315,17 @@ td.cost-high { color: var(--fail); font-weight: 700; }
 /* tool tags in proxy summary */
 .proxy-tool-tags { font-size: 10px; color: var(--muted); flex-shrink: 0; }
 
+/* config viewer */
+.config-source { padding: 10px 14px; background: var(--surface); border: 1px solid var(--fg);
+  margin-bottom: 16px; font-size: 12px; }
+.config-section { margin-bottom: 16px; }
+.config-grid { display: grid; grid-template-columns: 200px 1fr; background: var(--surface);
+  border: 1px solid #ddd; border-top: none; }
+.config-key { padding: 6px 12px; font-weight: 600; font-size: 12px;
+  border-bottom: 1px solid #eee; background: #fafaf5; }
+.config-val { padding: 6px 12px; font-size: 12px; border-bottom: 1px solid #eee;
+  word-break: break-word; }
+.config-val-true { color: var(--ok); font-weight: 600; }
+.config-val-false { color: var(--fail); font-weight: 600; }
+.config-val-null { font-style: italic; color: var(--muted); }
+

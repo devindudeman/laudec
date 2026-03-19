@@ -2,9 +2,9 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(default)]
 pub struct Config {
     pub sandbox: SandboxConfig,
@@ -16,7 +16,14 @@ pub struct Config {
     pub claude: ClaudeConfig,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Serialize, Clone)]
+pub struct ConfigWithSource {
+    pub source: String,
+    #[serde(flatten)]
+    pub config: Config,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(default)]
 pub struct SandboxConfig {
     pub enabled: bool,
@@ -24,7 +31,7 @@ pub struct SandboxConfig {
     pub allow_write: Vec<String>,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(default)]
 pub struct PermissionsConfig {
     pub allow: Vec<String>,
@@ -32,7 +39,7 @@ pub struct PermissionsConfig {
     pub mode: String,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(default)]
 pub struct ProxyConfig {
     pub enabled: bool,
@@ -43,7 +50,7 @@ pub struct ProxyConfig {
     pub remote: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(default)]
 pub struct TelemetryConfig {
     pub enabled: bool,
@@ -55,7 +62,7 @@ pub struct TelemetryConfig {
     pub remote: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(default)]
 pub struct DashboardConfig {
     pub enabled: bool,
@@ -63,14 +70,14 @@ pub struct DashboardConfig {
     pub open_browser: bool,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(default)]
 pub struct SessionConfig {
     pub summary: bool,
     pub summary_model: String,
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 #[serde(default)]
 pub struct ClaudeConfig {
     pub model: Option<String>,
@@ -205,6 +212,42 @@ impl Config {
 
         // 3. Defaults
         Ok(Config::default())
+    }
+
+    pub fn load_with_source(project_path: &Path) -> Result<ConfigWithSource> {
+        // 1. Project-level laudec.toml
+        let project_config = project_path.join("laudec.toml");
+        if project_config.exists() {
+            let content = std::fs::read_to_string(&project_config)
+                .with_context(|| format!("reading {}", project_config.display()))?;
+            let config: Config = toml::from_str(&content)
+                .with_context(|| format!("parsing {}", project_config.display()))?;
+            return Ok(ConfigWithSource {
+                source: project_config.display().to_string(),
+                config,
+            });
+        }
+
+        // 2. User-level ~/.config/laudec/config.toml
+        if let Some(config_dir) = dirs::config_dir() {
+            let user_config = config_dir.join("laudec").join("config.toml");
+            if user_config.exists() {
+                let content = std::fs::read_to_string(&user_config)
+                    .with_context(|| format!("reading {}", user_config.display()))?;
+                let config: Config = toml::from_str(&content)
+                    .with_context(|| format!("parsing {}", user_config.display()))?;
+                return Ok(ConfigWithSource {
+                    source: user_config.display().to_string(),
+                    config,
+                });
+            }
+        }
+
+        // 3. Defaults
+        Ok(ConfigWithSource {
+            source: "defaults".into(),
+            config: Config::default(),
+        })
     }
 
     pub fn starter_toml() -> &'static str {

@@ -1,10 +1,12 @@
 use axum::extract::{Path, Query, State};
 use axum::response::{Html, IntoResponse, Response};
 use axum::routing::get;
-use axum::Router;
+use axum::{Extension, Router};
 use rust_embed::Embed;
 use serde::Deserialize;
+use std::sync::Arc;
 
+use crate::config::ConfigWithSource;
 use crate::db::Db;
 
 #[derive(Embed)]
@@ -13,14 +15,16 @@ struct Assets;
 
 // ── Public API ────────────────────────────────────────────────────────
 
-pub fn router(db: Db) -> Router {
+pub fn router(db: Db, config: Arc<ConfigWithSource>) -> Router {
     Router::new()
         .nest("/api", api_router(db))
+        .route("/api/config", get(get_config))
+        .layer(Extension(config))
         .fallback(static_handler)
 }
 
-pub async fn start(db: Db, port: u16) -> anyhow::Result<()> {
-    let app = router(db);
+pub async fn start(db: Db, port: u16, config: Arc<ConfigWithSource>) -> anyhow::Result<()> {
+    let app = router(db, config);
     let listener = tokio::net::TcpListener::bind(("127.0.0.1", port)).await?;
     tracing::info!("dashboard at http://127.0.0.1:{port}");
     axum::serve(listener, app).await?;
@@ -147,6 +151,10 @@ async fn get_session_tools(State(db): State<Db>, Path(id): Path<String>) -> impl
             axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response()
         }
     }
+}
+
+async fn get_config(Extension(config): Extension<Arc<ConfigWithSource>>) -> impl IntoResponse {
+    axum::Json(config.as_ref().clone())
 }
 
 /// Resolve a session ID to the CC OTEL session ID.
