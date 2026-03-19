@@ -278,16 +278,17 @@ impl Db {
         .await?
     }
 
-    pub async fn resolve_run_id(&self, cc_session_id: &str) -> Result<Option<String>> {
+    /// Resolve any session ID (run_id or cc_session_id) to the proxy run_id.
+    pub async fn resolve_run_id(&self, id: &str) -> Result<Option<String>> {
         let conn = self.conn.clone();
-        let cc_session_id = cc_session_id.to_string();
+        let id = id.to_string();
 
         tokio::task::spawn_blocking(move || {
             let conn = conn.lock().map_err(|e| anyhow::anyhow!("db lock: {e}"))?;
             let result: Option<String> = conn
                 .query_row(
-                    "SELECT run_id FROM session_id_map WHERE cc_session_id = ?1",
-                    rusqlite::params![cc_session_id],
+                    "SELECT run_id FROM session_id_map WHERE cc_session_id = ?1 OR run_id = ?1",
+                    rusqlite::params![id],
                     |row| row.get(0),
                 )
                 .ok();
@@ -296,16 +297,17 @@ impl Db {
         .await?
     }
 
-    pub async fn resolve_cc_session_id(&self, run_id: &str) -> Result<Option<String>> {
+    /// Resolve any session ID (run_id or cc_session_id) to the OTEL cc_session_id.
+    pub async fn resolve_cc_session_id(&self, id: &str) -> Result<Option<String>> {
         let conn = self.conn.clone();
-        let run_id = run_id.to_string();
+        let id = id.to_string();
 
         tokio::task::spawn_blocking(move || {
             let conn = conn.lock().map_err(|e| anyhow::anyhow!("db lock: {e}"))?;
             let result: Option<String> = conn
                 .query_row(
-                    "SELECT cc_session_id FROM session_id_map WHERE run_id = ?1",
-                    rusqlite::params![run_id],
+                    "SELECT cc_session_id FROM session_id_map WHERE run_id = ?1 OR cc_session_id = ?1",
+                    rusqlite::params![id],
                     |row| row.get(0),
                 )
                 .ok();
