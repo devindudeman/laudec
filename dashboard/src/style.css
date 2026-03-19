@@ -213,17 +213,23 @@ td.cost-high { color: var(--fail); font-weight: 700; }
 .proxy-section summary:hover { color: var(--fg); }
 .proxy-section pre { padding: 10px 14px; font-size: 11px; overflow-x: auto;
   max-height: 400px; overflow-y: auto; margin: 0; white-space: pre-wrap; word-break: break-all; }
-.proxy-section pre.json-hl { background: #1e1e1e; color: #d4d4d4; }
+.proxy-section pre.json-hl { background: var(--surface); color: var(--fg); }
 
-/* JSON syntax highlighting */
-.json-key { color: #9cdcfe; }
-.json-str { color: #ce9178; }
-.json-num { color: #b5cea8; }
-.json-bool { color: #569cd6; }
-.json-null { color: #569cd6; font-style: italic; }
+/* JSON syntax highlighting (light background) */
+.json-key { color: #0451a5; }
+.json-str { color: #a31515; }
+.json-num { color: #098658; }
+.json-bool { color: #0000ff; }
+.json-null { color: #0000ff; font-style: italic; }
+.json-fold { display: inline; }
+.json-fold summary { display: inline; cursor: pointer; list-style: none; }
+.json-fold summary::-webkit-details-marker { display: none; }
+.json-fold summary::marker { display: none; content: ''; }
+.json-fold summary:hover { opacity: 0.7; }
+.json-preview { color: var(--muted); font-style: italic; font-size: 0.9em; }
 /* SSE event markers */
-.sse-event { color: #6a9955; font-weight: 600; }
-.sse-data { color: #6a9955; }
+.sse-event { color: #098658; font-weight: 600; }
+.sse-data { color: #098658; }
 
 /* turns (OTEL events grouped by prompt.id) */
 .turns { display: flex; flex-direction: column; gap: 8px; }

@@ -139,16 +139,12 @@
     try { return JSON.stringify(attrs, null, 2); } catch { return '{}'; }
   }
 
-  function tryPrettyJson(str) {
-    if (!str) return '';
-    try { return JSON.stringify(JSON.parse(str), null, 2); } catch { return str; }
-  }
+  const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
   /** Syntax-highlight a JSON string into HTML spans */
   function highlightJson(str) {
     if (!str) return '';
-    return str
-      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    return esc(str)
       .replace(/"([^"\\]*(\\.[^"\\]*)*)"(\s*:)?/g, (match, key, _esc, colon) => {
         if (colon) return `<span class="json-key">"${key}"</span>:`;
         return `<span class="json-str">"${key}"</span>`;
@@ -158,13 +154,52 @@
       .replace(/\bnull\b/g, '<span class="json-null">null</span>');
   }
 
-  /** Pretty-print + highlight a JSON string */
+  /** Collapsible JSON tree — large nodes start collapsed */
+  function jsonTreeHtml(val, indent = 0, key = null) {
+    const pad = '  '.repeat(indent);
+    const keyPrefix = key !== null ? `<span class="json-key">"${esc(key)}"</span>: ` : '';
+
+    if (val === null) return `${pad}${keyPrefix}<span class="json-null">null</span>`;
+    if (typeof val === 'boolean') return `${pad}${keyPrefix}<span class="json-bool">${val}</span>`;
+    if (typeof val === 'number') return `${pad}${keyPrefix}<span class="json-num">${val}</span>`;
+    if (typeof val === 'string') {
+      const truncated = val.length > 200 ? esc(val.slice(0, 200)) + '...' : esc(val);
+      return `${pad}${keyPrefix}<span class="json-str">"${truncated}"</span>`;
+    }
+
+    const isArray = Array.isArray(val);
+    const entries = isArray ? val : Object.entries(val);
+    const open = isArray ? '[' : '{';
+    const close = isArray ? ']' : '}';
+    const count = isArray ? val.length : Object.keys(val).length;
+
+    if (count === 0) return `${pad}${keyPrefix}${open}${close}`;
+
+    // Compute size to decide collapse
+    const rawSize = JSON.stringify(val).length;
+    const collapsed = rawSize > 500;
+
+    const childLines = isArray
+      ? entries.map((v, i) => jsonTreeHtml(v, indent + 1) + (i < count - 1 ? ',' : ''))
+      : entries.map(([k, v], i) => jsonTreeHtml(v, indent + 1, k) + (i < count - 1 ? ',' : ''));
+
+    const preview = isArray
+      ? `${count} item${count !== 1 ? 's' : ''}`
+      : Object.keys(val).slice(0, 4).join(', ') + (count > 4 ? ', ...' : '');
+
+    if (collapsed) {
+      return `${pad}${keyPrefix}<details class="json-fold"><summary>${open} <span class="json-preview">${esc(preview)}</span> ${close}</summary>\n${childLines.join('\n')}\n${pad}${close}</details>`;
+    }
+    return `${pad}${keyPrefix}${open}\n${childLines.join('\n')}\n${pad}${close}`;
+  }
+
+  /** Pretty-print JSON string as collapsible tree */
   function prettyJsonHtml(str) {
     if (!str) return '';
     try {
-      return highlightJson(JSON.stringify(JSON.parse(str), null, 2));
+      return jsonTreeHtml(JSON.parse(str));
     } catch {
-      return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      return esc(str);
     }
   }
 
@@ -174,16 +209,16 @@
     // Plain JSON
     try {
       const parsed = JSON.parse(str);
-      return highlightJson(JSON.stringify(parsed, null, 2));
+      return jsonTreeHtml(parsed);
     } catch { /* not plain JSON, try SSE */ }
     // SSE: highlight each event block
-    const escaped = str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const escaped = esc(str);
     return escaped.replace(/^(event: .+)$/gm, '<span class="sse-event">$1</span>')
       .replace(/^data: (.+)$/gm, (_match, json) => {
-        // json is already HTML-escaped, unescape for parse then re-highlight
         const raw = json.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
         try {
-          return '<span class="sse-data">data: </span>' + highlightJson(JSON.stringify(JSON.parse(raw), null, 2));
+          const parsed = JSON.parse(raw);
+          return '<span class="sse-data">data: </span>' + jsonTreeHtml(parsed, 1);
         } catch { return 'data: ' + json; }
       });
   }
