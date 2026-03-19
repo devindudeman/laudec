@@ -190,38 +190,14 @@ impl Default for ClaudeConfig {
 
 impl Config {
     pub fn load(project_path: &Path) -> Result<Self> {
-        // 1. Project-level laudec.toml
-        let project_config = project_path.join("laudec.toml");
-        if project_config.exists() {
-            let content = std::fs::read_to_string(&project_config)
-                .with_context(|| format!("reading {}", project_config.display()))?;
-            return toml::from_str(&content)
-                .with_context(|| format!("parsing {}", project_config.display()));
-        }
-
-        // 2. User-level ~/.config/laudec/config.toml
-        if let Some(config_dir) = dirs::config_dir() {
-            let user_config = config_dir.join("laudec").join("config.toml");
-            if user_config.exists() {
-                let content = std::fs::read_to_string(&user_config)
-                    .with_context(|| format!("reading {}", user_config.display()))?;
-                return toml::from_str(&content)
-                    .with_context(|| format!("parsing {}", user_config.display()));
-            }
-        }
-
-        // 3. Defaults
-        Ok(Config::default())
+        Ok(Self::load_with_source(project_path)?.config)
     }
 
     pub fn load_with_source(project_path: &Path) -> Result<ConfigWithSource> {
         // 1. Project-level laudec.toml
         let project_config = project_path.join("laudec.toml");
         if project_config.exists() {
-            let content = std::fs::read_to_string(&project_config)
-                .with_context(|| format!("reading {}", project_config.display()))?;
-            let config: Config = toml::from_str(&content)
-                .with_context(|| format!("parsing {}", project_config.display()))?;
+            let config = Self::load_file(&project_config)?;
             return Ok(ConfigWithSource {
                 source: project_config.display().to_string(),
                 config,
@@ -232,10 +208,7 @@ impl Config {
         if let Some(config_dir) = dirs::config_dir() {
             let user_config = config_dir.join("laudec").join("config.toml");
             if user_config.exists() {
-                let content = std::fs::read_to_string(&user_config)
-                    .with_context(|| format!("reading {}", user_config.display()))?;
-                let config: Config = toml::from_str(&content)
-                    .with_context(|| format!("parsing {}", user_config.display()))?;
+                let config = Self::load_file(&user_config)?;
                 return Ok(ConfigWithSource {
                     source: user_config.display().to_string(),
                     config,
@@ -248,6 +221,13 @@ impl Config {
             source: "defaults".into(),
             config: Config::default(),
         })
+    }
+
+    fn load_file(path: &Path) -> Result<Self> {
+        let content = std::fs::read_to_string(path)
+            .with_context(|| format!("reading {}", path.display()))?;
+        toml::from_str(&content)
+            .with_context(|| format!("parsing {}", path.display()))
     }
 
     pub fn starter_toml() -> &'static str {

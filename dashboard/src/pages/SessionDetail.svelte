@@ -21,6 +21,7 @@
   let tools = $state([]);
   let tab = $state('proxy');
   let loading = $state(true);
+  let error = $state(null);
   let expandedCalls = $state({});
   let collapsedConversations = $state({});
   let expandedEvents = $state({});
@@ -33,6 +34,7 @@
       ]);
       detail = d;
       calls = c;
+      error = null;
       // Refresh tab-specific data if already loaded
       if (events.length > 0) {
         events = await fetchEvents(id);
@@ -41,7 +43,7 @@
         tools = await fetchTools(id);
       }
     } catch (e) {
-      console.error('Failed to load session:', e);
+      error = e.message;
     } finally {
       loading = false;
     }
@@ -209,12 +211,7 @@
           if (!raw) return null;
 
           // Collect system blocks
-          const systemBlocks = [];
-          let match;
-          const re = new RegExp(SYSTEM_TAG_RE.source, 'g');
-          while ((match = re.exec(raw)) !== null) {
-            systemBlocks.push(match[0]);
-          }
+          const systemBlocks = [...raw.matchAll(SYSTEM_TAG_RE)].map(m => m[0]);
 
           // User text is everything outside system blocks
           let userText = raw.replace(SYSTEM_TAG_RE, '').replace(/\n{3,}/g, '\n\n').trim();
@@ -369,6 +366,8 @@
 
 {#if loading}
   <div class="loading">Loading session...</div>
+{:else if error}
+  <div class="stub">Error loading session: {error}</div>
 {:else if detail}
   <div class="stats-bar">
     <div class="stat">

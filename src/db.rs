@@ -635,29 +635,48 @@ impl Db {
         .await?
     }
 
-    // ── Existing queries ──────────────────────────────────────────────
-
-    pub async fn get_session_token_stats(&self, since: Option<&str>) -> Result<SessionStats> {
+    /// Fetch a single session by its run_id (primary key).
+    pub async fn get_session_by_id(&self, id: &str) -> Result<Option<SessionRecord>> {
         let conn = self.conn.clone();
-        let since = since.map(String::from);
+        let id = id.to_string();
 
         tokio::task::spawn_blocking(move || {
             let conn = conn.lock().map_err(|e| anyhow::anyhow!("db lock: {e}"))?;
-            if let Some(ref since) = since {
-                let mut stmt = conn.prepare(
-                    "SELECT COUNT(*), COALESCE(SUM(input_tokens),0), COALESCE(SUM(output_tokens),0),
-                            COALESCE(SUM(cache_read),0), COALESCE(SUM(cache_write),0)
-                     FROM api_calls WHERE timestamp >= ?1",
-                )?;
-                Ok(stmt.query_row(rusqlite::params![since], row_to_stats)?)
-            } else {
-                let mut stmt = conn.prepare(
-                    "SELECT COUNT(*), COALESCE(SUM(input_tokens),0), COALESCE(SUM(output_tokens),0),
-                            COALESCE(SUM(cache_read),0), COALESCE(SUM(cache_write),0)
-                     FROM api_calls",
-                )?;
-                Ok(stmt.query_row([], row_to_stats)?)
-            }
+            let result = conn
+                .query_row(
+                    "SELECT id, project, started_at, ended_at, duration_secs,
+                            api_call_count, input_tokens, output_tokens,
+                            files_changed, lines_added, lines_removed, summary, cost_usd, cc_session_id,
+                            model, first_prompt, error_count
+                     FROM sessions WHERE id = ?1",
+                    rusqlite::params![id],
+                    row_to_session,
+                )
+                .ok();
+            Ok(result)
+        })
+        .await?
+    }
+
+    /// Fetch a single session by its cc_session_id.
+    pub async fn get_session_by_cc_id(&self, cc_id: &str) -> Result<Option<SessionRecord>> {
+        let conn = self.conn.clone();
+        let cc_id = cc_id.to_string();
+
+        tokio::task::spawn_blocking(move || {
+            let conn = conn.lock().map_err(|e| anyhow::anyhow!("db lock: {e}"))?;
+            let result = conn
+                .query_row(
+                    "SELECT id, project, started_at, ended_at, duration_secs,
+                            api_call_count, input_tokens, output_tokens,
+                            files_changed, lines_added, lines_removed, summary, cost_usd, cc_session_id,
+                            model, first_prompt, error_count
+                     FROM sessions WHERE cc_session_id = ?1",
+                    rusqlite::params![cc_id],
+                    row_to_session,
+                )
+                .ok();
+            Ok(result)
         })
         .await?
     }
@@ -902,16 +921,6 @@ fn build_event_filter(
 
 // ── Row mappers ───────────────────────────────────────────────────────
 
-fn row_to_stats(row: &rusqlite::Row) -> rusqlite::Result<SessionStats> {
-    Ok(SessionStats {
-        api_call_count: row.get(0)?,
-        input_tokens: row.get(1)?,
-        output_tokens: row.get(2)?,
-        cache_read: row.get(3)?,
-        cache_write: row.get(4)?,
-    })
-}
-
 fn row_to_session(row: &rusqlite::Row) -> rusqlite::Result<SessionRecord> {
     Ok(SessionRecord {
         id: row.get(0)?,
@@ -962,15 +971,6 @@ pub struct AggregateStats {
     pub total_cost: f64,
     pub total_input: i64,
     pub total_output: i64,
-}
-
-#[derive(Debug)]
-pub struct SessionStats {
-    pub api_call_count: i64,
-    pub input_tokens: i64,
-    pub output_tokens: i64,
-    pub cache_read: i64,
-    pub cache_write: i64,
 }
 
 #[derive(Debug, serde::Serialize)]

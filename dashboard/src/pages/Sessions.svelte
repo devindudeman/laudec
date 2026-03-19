@@ -4,13 +4,15 @@
 
   let sessions = $state([]);
   let loading = $state(true);
+  let error = $state(null);
   let timer = null;
 
   async function load() {
     try {
       sessions = await fetchSessions();
+      error = null;
     } catch (e) {
-      console.error('Failed to fetch sessions:', e);
+      error = e.message;
     } finally {
       loading = false;
     }
@@ -56,6 +58,8 @@
 
 {#if loading}
   <div class="loading">Loading sessions...</div>
+{:else if error}
+  <div class="stub">Error loading sessions: {error}</div>
 {:else if sessions.length === 0}
   <div class="stub">No sessions recorded yet</div>
 {:else}
