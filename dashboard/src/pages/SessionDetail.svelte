@@ -154,6 +154,45 @@
       .replace(/\bnull\b/g, '<span class="json-null">null</span>');
   }
 
+  /** Find the best "identity" key from an object — first short string field */
+  const IDENTITY_KEYS = ['name', 'tool_name', 'id', 'type', 'role', 'key'];
+  function identityKey(obj) {
+    if (!obj || typeof obj !== 'object') return null;
+    // Prefer well-known keys
+    for (const k of IDENTITY_KEYS) {
+      if (typeof obj[k] === 'string' && obj[k].length < 60) return k;
+    }
+    // Fall back to first short string value
+    for (const [k, v] of Object.entries(obj)) {
+      if (typeof v === 'string' && v.length < 60) return k;
+    }
+    return null;
+  }
+
+  /** Preview for a collapsed object — show identity value or key names */
+  function objectPreview(obj) {
+    const idKey = identityKey(obj);
+    if (idKey) return `"${obj[idKey]}"`;
+    const keys = Object.keys(obj);
+    return keys.slice(0, 4).join(', ') + (keys.length > 4 ? ', ...' : '');
+  }
+
+  /** Preview for a collapsed array — show identity values of items */
+  function arrayPreview(arr) {
+    if (arr.length === 0) return '';
+    // If items are objects with an identity field, list the values
+    if (typeof arr[0] === 'object' && arr[0] !== null) {
+      const idKey = identityKey(arr[0]);
+      if (idKey) {
+        const names = arr.filter(v => v && typeof v[idKey] === 'string').map(v => v[idKey]);
+        const shown = names.slice(0, 6);
+        const rest = names.length > 6 ? ` +${names.length - 6} more` : '';
+        return shown.join(', ') + rest;
+      }
+    }
+    return `${arr.length} item${arr.length !== 1 ? 's' : ''}`;
+  }
+
   /** Collapsible JSON tree — large nodes start collapsed */
   function jsonTreeHtml(val, indent = 0, key = null) {
     const pad = '  '.repeat(indent);
@@ -168,24 +207,21 @@
     }
 
     const isArray = Array.isArray(val);
-    const entries = isArray ? val : Object.entries(val);
     const open = isArray ? '[' : '{';
     const close = isArray ? ']' : '}';
     const count = isArray ? val.length : Object.keys(val).length;
 
     if (count === 0) return `${pad}${keyPrefix}${open}${close}`;
 
-    // Compute size to decide collapse
+    // Top-level (indent 0) always expanded; children collapse when large
     const rawSize = JSON.stringify(val).length;
-    const collapsed = rawSize > 500;
+    const collapsed = indent > 0 && rawSize > 500;
 
     const childLines = isArray
-      ? entries.map((v, i) => jsonTreeHtml(v, indent + 1) + (i < count - 1 ? ',' : ''))
-      : entries.map(([k, v], i) => jsonTreeHtml(v, indent + 1, k) + (i < count - 1 ? ',' : ''));
+      ? val.map((v, i) => jsonTreeHtml(v, indent + 1) + (i < count - 1 ? ',' : ''))
+      : Object.entries(val).map(([k, v], i) => jsonTreeHtml(v, indent + 1, k) + (i < count - 1 ? ',' : ''));
 
-    const preview = isArray
-      ? `${count} item${count !== 1 ? 's' : ''}`
-      : Object.keys(val).slice(0, 4).join(', ') + (count > 4 ? ', ...' : '');
+    const preview = isArray ? arrayPreview(val) : objectPreview(val);
 
     if (collapsed) {
       return `${pad}${keyPrefix}<details class="json-fold"><summary>${open} <span class="json-preview">${esc(preview)}</span> ${close}</summary>\n${childLines.join('\n')}\n${pad}${close}</details>`;
