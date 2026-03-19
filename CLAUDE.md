@@ -35,7 +35,7 @@ Claude Code  ──▶  laudec proxy (Axum)  ──▶  Anthropic API
 | `src/main.rs` | CLI (clap), orchestrates proxy/collector/dashboard/launcher |
 | `src/proxy.rs` | HTTP proxy — intercepts API calls, logs to DB |
 | `src/collector.rs` | gRPC OTEL collector — receives logs/metrics from CC |
-| `src/dashboard.rs` | Axum API routes + serves embedded Svelte SPA |
+| `src/dashboard.rs` | Axum API routes (AppState), insights computation, serves embedded Svelte SPA |
 | `src/db.rs` | SQLite schema, all DB methods (spawn_blocking + conn.lock()) |
 | `src/session.rs` | Post-session bookkeeping (stats, git diff, summary) |
 | `src/config.rs` | Config loading (laudec.toml → ~/.config/laudec/ → defaults) |
@@ -65,10 +65,14 @@ Loaded from `laudec.toml` in project dir, falls back to `~/.config/laudec/config
 
 Default ports: proxy 18080, collector 14317, dashboard 18384.
 
-## Testing
+## Dashboard API
 
-```bash
-./test_integration.sh   # requires Claude Code installed + API key
-```
-
-Runs a real CC session with test prompt, validates DB contents and dashboard API.
+| Endpoint | Description |
+|----------|-------------|
+| `GET /api/sessions` | List sessions |
+| `GET /api/sessions/{id}` | Session detail (stats, tools, prompts) |
+| `GET /api/sessions/{id}/calls` | Proxy call log |
+| `GET /api/sessions/{id}/events` | OTEL events |
+| `GET /api/sessions/{id}/tools` | Tool usage |
+| `GET /api/sessions/{id}/insights` | Derived analytics (cache, rate limits, stop reasons, context growth) |
+| `GET /api/config` | Resolved config with source |

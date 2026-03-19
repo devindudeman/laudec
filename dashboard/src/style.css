@@ -189,16 +189,20 @@ td.cost-high { color: var(--fail); font-weight: 700; }
 .proxy-system-tag { font-size: 10px; font-weight: 700; text-transform: uppercase;
   letter-spacing: 0.5px; color: var(--muted); display: inline-block; margin-bottom: 4px;
   font-family: var(--font); }
-.proxy-system-content { font-size: 12px; line-height: 1.5; max-height: 500px; overflow-y: auto; }
-.proxy-system-content.markdown p { margin: 0 0 6px; }
+.proxy-system-content { font-size: 10px; line-height: 1.4; max-height: 500px; overflow-y: auto; }
+.proxy-system-content.markdown p { margin: 0 0 4px; }
 .proxy-system-content.markdown p:last-child { margin-bottom: 0; }
-.proxy-system-content.markdown code { font-family: var(--font); font-size: 11px;
+.proxy-system-content.markdown code { font-family: var(--font); font-size: 9px;
   background: rgba(0,0,0,0.06); padding: 1px 4px; border-radius: 2px; }
-.proxy-system-content.markdown pre { background: #1e1e1e; color: #d4d4d4; padding: 8px 10px;
+.proxy-system-content.markdown pre { background: #1e1e1e; color: #d4d4d4; padding: 6px 8px; font-size: 9px;
   margin: 6px 0; overflow-x: auto; border-radius: 2px; border-left: none; }
-.proxy-system-content.markdown pre code { background: none; padding: 0; color: inherit; }
+.proxy-system-content.markdown pre code { background: none; padding: 0; color: inherit; font-size: 9px; }
 .proxy-system-content.markdown ul, .proxy-system-content.markdown ol { margin: 4px 0 6px 18px; }
 .proxy-system-content.markdown li { margin-bottom: 2px; }
+.proxy-system-content.markdown h1, .proxy-system-content.markdown h2,
+.proxy-system-content.markdown h3, .proxy-system-content.markdown h4,
+.proxy-system-content.markdown h5, .proxy-system-content.markdown h6 {
+  font-size: 10px; font-weight: 700; margin: 6px 0 3px; }
 .proxy-details { border-top: 2px solid #ddd; background: var(--bg); padding: 4px 0; }
 .proxy-details-label { font-size: 9px; font-weight: 700; text-transform: uppercase;
   letter-spacing: 1px; color: #aaa; padding: 4px 14px 2px; }
@@ -328,4 +332,20 @@ td.cost-high { color: var(--fail); font-weight: 700; }
 .config-val-true { color: var(--ok); font-weight: 600; }
 .config-val-false { color: var(--fail); font-weight: 600; }
 .config-val-null { font-style: italic; color: var(--muted); }
+
+/* insights */
+.insights-pills { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
+.insights-pill { font-size: 11px; padding: 4px 10px; border: 1px solid #ddd;
+  background: var(--surface); font-family: var(--font); }
+.insights-pill strong { margin-left: 4px; }
+.insights-pill-warn { border-color: var(--fail); color: var(--fail); }
+.insights-pill-sm { font-size: 9px; padding: 1px 5px; border: 1px solid #ddd;
+  background: var(--surface); flex-shrink: 0; }
+.insights-warn { color: var(--fail); font-weight: 700; }
+
+/* context growth chart */
+.context-chart { display: flex; flex-direction: column; gap: 3px; margin-bottom: 16px; }
+.context-bar-row { display: flex; align-items: center; gap: 8px; font-size: 11px; }
+.context-bar-label { width: 30px; text-align: right; color: var(--muted); flex-shrink: 0; }
+.context-bar-value { width: 50px; text-align: right; flex-shrink: 0; font-variant-numeric: tabular-nums; }
 

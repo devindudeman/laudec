@@ -59,6 +59,14 @@ Session-level summary:
 - Per-call table with totals
 - Tool usage with success/failure counts
 
+### Insights Tab
+Derived analytics from proxy headers and response bodies:
+- **Cache analysis** — hit rate, estimated cost savings, cache read/write totals
+- **Stop reasons** — breakdown of end_turn, tool_use, max_tokens across all calls
+- **System prompt size** — estimated token count of your system prompt
+- **Context growth** — input tokens per call showing context window fill-up over time
+- **Rate limits** — remaining requests/tokens from Anthropic response headers, with warning thresholds
+
 ## How It Works
 
 ```

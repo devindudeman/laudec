@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import { marked } from 'marked';
   import {
-    fetchSession, fetchEvents, fetchCalls, fetchTools,
+    fetchSession, fetchEvents, fetchCalls, fetchTools, fetchInsights,
     fmtDuration, fmtTokens, fmtCost, fmtTime, fmtMs, parseAttrs, pct,
   } from '../lib/api.js';
 
@@ -25,6 +25,7 @@
   let expandedCalls = $state({});
   let collapsedConversations = $state({});
   let expandedEvents = $state({});
+  let insights = $state(null);
 
   async function load() {
     try {
@@ -71,10 +72,17 @@
     }
   }
 
+  async function loadInsights() {
+    if (!insights) {
+      try { insights = await fetchInsights(id); } catch (e) { console.error('Failed to load insights:', e); }
+    }
+  }
+
   function switchTab(t) {
     tab = t;
     if (t === 'events') loadEvents();
     if (t === 'metrics') loadMetrics();
+    if (t === 'insights') loadInsights();
   }
 
   function toggleCall(i) {
@@ -404,6 +412,7 @@
     <button class="tab" class:active={tab === 'proxy'} onclick={() => switchTab('proxy')}>PROXY</button>
     <button class="tab" class:active={tab === 'events'} onclick={() => switchTab('events')}>EVENTS</button>
     <button class="tab" class:active={tab === 'metrics'} onclick={() => switchTab('metrics')}>METRICS</button>
+    <button class="tab" class:active={tab === 'insights'} onclick={() => switchTab('insights')}>INSIGHTS</button>
   </div>
 
   <!-- PROXY TAB: Full API traffic inspector -->
@@ -773,6 +782,128 @@
             {/each}
           </tbody>
         </table>
+      {/if}
+    {/if}
+
+  {:else if tab === 'insights'}
+    {#if !insights}
+      <div class="loading">Loading insights...</div>
+    {:else}
+      <!-- Cache Analysis -->
+      <div class="section-title">Cache Analysis</div>
+      <div class="metrics-cards">
+        <div class="metrics-card">
+          <div class="metrics-card-label">Cache Hit Rate</div>
+          <div class="metrics-card-value">{(insights.cache_analysis.cache_hit_rate * 100).toFixed(0)}%</div>
+        </div>
+        <div class="metrics-card">
+          <div class="metrics-card-label">Est. Savings</div>
+          <div class="metrics-card-value" style="color: var(--ok)">${insights.cache_analysis.estimated_savings_usd.toFixed(4)}</div>
+        </div>
+        <div class="metrics-card">
+          <div class="metrics-card-label">Cache Read</div>
+          <div class="metrics-card-value">{fmtTokens(insights.cache_analysis.total_cache_read)}</div>
+        </div>
+        <div class="metrics-card">
+          <div class="metrics-card-label">Cache Write</div>
+          <div class="metrics-card-value">{fmtTokens(insights.cache_analysis.total_cache_write)}</div>
+        </div>
+      </div>
+
+      <!-- Stop Reasons -->
+      {#if Object.keys(insights.stop_reasons).length > 0}
+        <div class="section-title">Stop Reasons</div>
+        <div class="insights-pills">
+          {#each Object.entries(insights.stop_reasons) as [reason, count]}
+            <span class="insights-pill" class:insights-pill-warn={reason === 'max_tokens'}>
+              {reason} <strong>{count}</strong>
+            </span>
+          {/each}
+        </div>
+      {/if}
+
+      <!-- System Prompt -->
+      {#if insights.system_prompt_tokens}
+        <div class="section-title">System Prompt</div>
+        <div class="metrics-cards">
+          <div class="metrics-card">
+            <div class="metrics-card-label">Est. Size</div>
+            <div class="metrics-card-value">~{fmtTokens(insights.system_prompt_tokens)} tokens</div>
+          </div>
+        </div>
+      {/if}
+
+      <!-- Context Growth -->
+      {#if insights.context_growth.length > 0}
+        <div class="section-title">Context Growth</div>
+        {@const maxInput = Math.max(...insights.context_growth.map(p => p.input_tokens)) || 1}
+        <div class="context-chart">
+          {#each insights.context_growth as point}
+            <div class="context-bar-row">
+              <div class="context-bar-label">#{point.call_number}</div>
+              <div class="bar-track">
+                <div class="bar-fill input" style="width: {point.input_tokens / maxInput * 100}%"
+                     title="{fmtTokens(point.input_tokens)} input tokens"></div>
+              </div>
+              <div class="context-bar-value">{fmtTokens(point.input_tokens)}</div>
+              {#if point.stop_reason}
+                <span class="insights-pill-sm" class:insights-pill-warn={point.stop_reason === 'max_tokens'}>
+                  {point.stop_reason}
+                </span>
+              {/if}
+            </div>
+          {/each}
+        </div>
+      {/if}
+
+      <!-- Rate Limits -->
+      {#if insights.rate_limits.length > 0}
+        <div class="section-title">Rate Limits</div>
+        {@const lastRL = insights.rate_limits[insights.rate_limits.length - 1]}
+        <div class="metrics-cards">
+          {#if lastRL.requests_remaining != null}
+            <div class="metrics-card">
+              <div class="metrics-card-label">Requests Remaining</div>
+              <div class="metrics-card-value" class:insights-warn={lastRL.requests_remaining < 10}>
+                {lastRL.requests_remaining}{#if lastRL.requests_limit} / {lastRL.requests_limit}{/if}
+              </div>
+            </div>
+          {/if}
+          {#if lastRL.tokens_remaining != null}
+            <div class="metrics-card">
+              <div class="metrics-card-label">Tokens Remaining</div>
+              <div class="metrics-card-value" class:insights-warn={lastRL.tokens_remaining < 10000}>
+                {fmtTokens(lastRL.tokens_remaining)}{#if lastRL.tokens_limit} / {fmtTokens(lastRL.tokens_limit)}{/if}
+              </div>
+            </div>
+          {/if}
+        </div>
+
+        <!-- Rate limit over time -->
+        {#if insights.rate_limits.length > 1}
+          <table>
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th class="num">Req Remaining</th>
+                <th class="num">Token Remaining</th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each insights.rate_limits as rl}
+                <tr>
+                  <td>{fmtTime(rl.timestamp)}</td>
+                  <td class="num" class:insights-warn={rl.requests_remaining != null && rl.requests_remaining < 10}>
+                    {rl.requests_remaining ?? '-'}{#if rl.requests_limit} / {rl.requests_limit}{/if}
+                  </td>
+                  <td class="num" class:insights-warn={rl.tokens_remaining != null && rl.tokens_remaining < 10000}>
+                    {rl.tokens_remaining != null ? fmtTokens(rl.tokens_remaining) : '-'}{#if rl.tokens_limit} / {fmtTokens(rl.tokens_limit)}{/if}
+                  </td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        {/if}
       {/if}
     {/if}
   {/if}

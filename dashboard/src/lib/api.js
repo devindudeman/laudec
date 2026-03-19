@@ -30,6 +30,10 @@ export function fetchConfig() {
   return get('/api/config');
 }
 
+export function fetchInsights(id) {
+  return get(`/api/sessions/${id}/insights`);
+}
+
 // Formatting helpers
 
 export function fmtDuration(secs) {
