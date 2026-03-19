@@ -78,6 +78,12 @@ enum Commands {
     Config,
     /// Generate a starter laudec.toml
     Init,
+    /// Show usage statistics
+    Stats {
+        /// Number of days to include (default: 7)
+        #[arg(long, default_value = "7")]
+        days: u64,
+    },
 }
 
 #[tokio::main]
@@ -106,6 +112,7 @@ async fn main() -> Result<()> {
         }
         Some(Commands::Replay { session_id }) => cmd_replay(&session_id).await,
         Some(Commands::Dashboard) => cmd_dashboard(&project_path).await,
+        Some(Commands::Stats { days }) => cmd_stats(days).await,
         None => cmd_run(&project_path, cli.prompt.as_deref()).await,
     }
 }
@@ -504,6 +511,64 @@ async fn cmd_run(project_path: &std::path::Path, prompt: Option<&str>) -> Result
     println!();
 
     Ok(())
+}
+
+// ── stats ─────────────────────────────────────────────────────────────
+
+async fn cmd_stats(days: u64) -> Result<()> {
+    let database = open_db()?;
+
+    let since = (chrono::Utc::now() - chrono::Duration::days(days as i64)).to_rfc3339();
+    let today = chrono::Utc::now().date_naive().and_hms_opt(0, 0, 0).unwrap();
+    let today_since = chrono::DateTime::<chrono::Utc>::from_naive_utc_and_offset(today, chrono::Utc).to_rfc3339();
+
+    let period_stats = database.get_aggregate_stats(Some(&since)).await?;
+    let today_stats = database.get_aggregate_stats(Some(&today_since)).await?;
+    let models = database.get_model_distribution(Some(&since)).await?;
+    let tools = database.get_aggregate_tool_usage(Some(&since)).await?;
+
+    let period_tokens = period_stats.total_input + period_stats.total_output;
+    let today_tokens = today_stats.total_input + today_stats.total_output;
+
+    println!(
+        "Last {} days:  {} sessions · ${:.2} · {} tokens",
+        days,
+        period_stats.session_count,
+        period_stats.total_cost,
+        fmt_token_count(period_tokens),
+    );
+    println!(
+        "Today:         {} sessions · ${:.2} · {} tokens",
+        today_stats.session_count,
+        today_stats.total_cost,
+        fmt_token_count(today_tokens),
+    );
+
+    if let Some((model, count)) = models.first() {
+        let total: i64 = models.iter().map(|(_, c)| c).sum();
+        let pct = if total > 0 { count * 100 / total } else { 0 };
+        println!("Top model:     {} ({}%)", model, pct);
+    }
+
+    if !tools.is_empty() {
+        let tool_strs: Vec<String> = tools
+            .iter()
+            .map(|(name, count)| format!("{} ({})", name, count))
+            .collect();
+        println!("Top tools:     {}", tool_strs.join(" · "));
+    }
+
+    Ok(())
+}
+
+fn fmt_token_count(n: i64) -> String {
+    if n >= 1_000_000 {
+        format!("{:.1}M", n as f64 / 1_000_000.0)
+    } else if n >= 1_000 {
+        format!("{}K", n / 1_000)
+    } else {
+        n.to_string()
+    }
 }
 
 // ── helpers ───────────────────────────────────────────────────────────

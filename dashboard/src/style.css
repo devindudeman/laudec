@@ -82,6 +82,24 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
 .log-entry.ok { color: var(--ok); }
 .log-entry.fail { color: var(--fail); }
 
+/* cost colors — td. prefix for specificity over table defaults */
+td.cost-low { color: var(--ok); }
+td.cost-mid { color: #b8860b; }
+td.cost-high { color: var(--fail); font-weight: 700; }
+
+/* badges */
+.badge-live { display: inline-block; font-size: 9px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.5px; padding: 1px 5px; background: var(--ok); color: #fff;
+  border-radius: 2px; margin-left: 6px; vertical-align: middle;
+  animation: live-pulse 1.5s ease-in-out infinite; }
+@keyframes live-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+.err-badge { display: inline-block; font-size: 9px; font-weight: 700;
+  padding: 1px 5px; background: var(--fail); color: #fff;
+  border-radius: 2px; margin-left: 4px; vertical-align: middle; }
+
 /* misc */
 .back { display: inline-block; margin-bottom: 12px; font-size: 12px; }
 .section-title { font-size: 11px; font-weight: 700; text-transform: uppercase;

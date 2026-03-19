@@ -61,6 +61,14 @@ pub async fn post_session(
     let summary_text = generate_summary(&prompts, &tools);
 
     let tool_uses: i64 = tools.iter().map(|t| t.uses).sum();
+    let error_count: i64 = tools.iter().map(|t| t.failures).sum();
+    let first_prompt = prompts.first().map(|p| {
+        if p.len() > 200 {
+            p[..p.ceil_char_boundary(200)].to_string()
+        } else {
+            p.clone()
+        }
+    });
     let changed_files_json = serde_json::to_string(&changed_files).ok();
 
     // ── Write session record ─────────────────────────────────────────
@@ -86,6 +94,8 @@ pub async fn post_session(
         otel_stats.cost_usd,
         tool_uses,
         cc_session_id,
+        first_prompt.as_deref(),
+        error_count,
     )
     .await?;
 

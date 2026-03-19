@@ -120,6 +120,8 @@ impl Db {
             "ALTER TABLE sessions ADD COLUMN tool_uses INTEGER",
             "ALTER TABLE sessions ADD COLUMN cc_session_id TEXT",
             "ALTER TABLE api_calls ADD COLUMN response_text TEXT",
+            "ALTER TABLE sessions ADD COLUMN first_prompt TEXT",
+            "ALTER TABLE sessions ADD COLUMN error_count INTEGER DEFAULT 0",
         ] {
             let _ = conn.execute(stmt, []);
         }
@@ -363,6 +365,8 @@ impl Db {
         cost_usd: f64,
         tool_uses: i64,
         cc_session_id: Option<&str>,
+        first_prompt: Option<&str>,
+        error_count: i64,
     ) -> Result<()> {
         let conn = self.conn.clone();
         let id = id.to_string();
@@ -375,6 +379,7 @@ impl Db {
         let summary = summary.map(String::from);
         let config_snapshot = config_snapshot.map(String::from);
         let cc_session_id = cc_session_id.map(String::from);
+        let first_prompt = first_prompt.map(String::from);
 
         tokio::task::spawn_blocking(move || {
             let conn = conn.lock().map_err(|e| anyhow::anyhow!("db lock: {e}"))?;
@@ -383,13 +388,15 @@ impl Db {
                  (id, project, project_path, started_at, ended_at, duration_secs,
                   api_call_count, input_tokens, output_tokens, cache_read, cache_write,
                   model, files_changed, lines_added, lines_removed,
-                  changed_files, summary, config_snapshot, cost_usd, tool_uses, cc_session_id)
-                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21)",
+                  changed_files, summary, config_snapshot, cost_usd, tool_uses, cc_session_id,
+                  first_prompt, error_count)
+                 VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23)",
                 rusqlite::params![
                     id, project, project_path, started_at, ended_at, duration_secs,
                     api_call_count, input_tokens, output_tokens, cache_read, cache_write,
                     model, files_changed, lines_added, lines_removed,
-                    changed_files, summary, config_snapshot, cost_usd, tool_uses, cc_session_id
+                    changed_files, summary, config_snapshot, cost_usd, tool_uses, cc_session_id,
+                    first_prompt, error_count
                 ],
             )?;
             Ok(())
@@ -669,7 +676,8 @@ impl Db {
                 let mut stmt = conn.prepare(
                     "SELECT id, project, started_at, ended_at, duration_secs,
                             api_call_count, input_tokens, output_tokens,
-                            files_changed, lines_added, lines_removed, summary, cost_usd, cc_session_id
+                            files_changed, lines_added, lines_removed, summary, cost_usd, cc_session_id,
+                            model, first_prompt, error_count
                      FROM sessions WHERE project = ?1
                      ORDER BY started_at DESC LIMIT ?2",
                 )?;
@@ -680,7 +688,8 @@ impl Db {
                 let mut stmt = conn.prepare(
                     "SELECT id, project, started_at, ended_at, duration_secs,
                             api_call_count, input_tokens, output_tokens,
-                            files_changed, lines_added, lines_removed, summary, cost_usd, cc_session_id
+                            files_changed, lines_added, lines_removed, summary, cost_usd, cc_session_id,
+                            model, first_prompt, error_count
                      FROM sessions ORDER BY started_at DESC LIMIT ?1",
                 )?;
                 let rows: Vec<_> = stmt.query_map(rusqlite::params![limit as i64], row_to_session)?
@@ -742,7 +751,120 @@ impl Db {
                         summary: Some("(live session)".to_string()),
                         cost_usd: row.get(6)?,
                         cc_session_id: Some(sid),
+                        model: None,
+                        first_prompt: None,
+                        error_count: None,
                     })
+                })?
+                .filter_map(Result::ok)
+                .collect();
+            Ok(rows)
+        })
+        .await?
+    }
+    // ── Aggregate stats for CLI ─────────────────────────────────────────
+
+    pub async fn get_aggregate_stats(&self, since: Option<&str>) -> Result<AggregateStats> {
+        let conn = self.conn.clone();
+        let since = since.map(String::from);
+
+        tokio::task::spawn_blocking(move || {
+            let conn = conn.lock().map_err(|e| anyhow::anyhow!("db lock: {e}"))?;
+            let (sql, params): (&str, Vec<Box<dyn rusqlite::types::ToSql>>) = if let Some(ref s) = since {
+                (
+                    "SELECT COUNT(*), COALESCE(SUM(cost_usd), 0.0),
+                            COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0)
+                     FROM sessions WHERE started_at >= ?1",
+                    vec![Box::new(s.clone()) as Box<dyn rusqlite::types::ToSql>],
+                )
+            } else {
+                (
+                    "SELECT COUNT(*), COALESCE(SUM(cost_usd), 0.0),
+                            COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0)
+                     FROM sessions",
+                    vec![],
+                )
+            };
+            let mut stmt = conn.prepare(sql)?;
+            let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+            let stats = stmt.query_row(param_refs.as_slice(), |row| {
+                Ok(AggregateStats {
+                    session_count: row.get(0)?,
+                    total_cost: row.get(1)?,
+                    total_input: row.get(2)?,
+                    total_output: row.get(3)?,
+                })
+            })?;
+            Ok(stats)
+        })
+        .await?
+    }
+
+    pub async fn get_model_distribution(&self, since: Option<&str>) -> Result<Vec<(String, i64)>> {
+        let conn = self.conn.clone();
+        let since = since.map(String::from);
+
+        tokio::task::spawn_blocking(move || {
+            let conn = conn.lock().map_err(|e| anyhow::anyhow!("db lock: {e}"))?;
+            let (sql, params): (&str, Vec<Box<dyn rusqlite::types::ToSql>>) = if let Some(ref s) = since {
+                (
+                    "SELECT model, COUNT(*) as cnt FROM sessions
+                     WHERE started_at >= ?1 AND model IS NOT NULL
+                     GROUP BY model ORDER BY cnt DESC",
+                    vec![Box::new(s.clone()) as Box<dyn rusqlite::types::ToSql>],
+                )
+            } else {
+                (
+                    "SELECT model, COUNT(*) as cnt FROM sessions
+                     WHERE model IS NOT NULL
+                     GROUP BY model ORDER BY cnt DESC",
+                    vec![],
+                )
+            };
+            let mut stmt = conn.prepare(sql)?;
+            let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+            let rows: Vec<(String, i64)> = stmt
+                .query_map(param_refs.as_slice(), |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+                })?
+                .filter_map(Result::ok)
+                .collect();
+            Ok(rows)
+        })
+        .await?
+    }
+
+    pub async fn get_aggregate_tool_usage(&self, since: Option<&str>) -> Result<Vec<(String, i64)>> {
+        let conn = self.conn.clone();
+        let since = since.map(String::from);
+
+        tokio::task::spawn_blocking(move || {
+            let conn = conn.lock().map_err(|e| anyhow::anyhow!("db lock: {e}"))?;
+            let (sql, params): (&str, Vec<Box<dyn rusqlite::types::ToSql>>) = if let Some(ref s) = since {
+                (
+                    "SELECT json_extract(attributes, '$.tool_name') as tool, COUNT(*) as cnt
+                     FROM otel_events
+                     WHERE (name = 'tool_result' OR json_extract(attributes, '$.event.name') = 'tool_result')
+                       AND json_extract(attributes, '$.tool_name') IS NOT NULL
+                       AND timestamp >= ?1
+                     GROUP BY tool ORDER BY cnt DESC LIMIT 5",
+                    vec![Box::new(s.clone()) as Box<dyn rusqlite::types::ToSql>],
+                )
+            } else {
+                (
+                    "SELECT json_extract(attributes, '$.tool_name') as tool, COUNT(*) as cnt
+                     FROM otel_events
+                     WHERE (name = 'tool_result' OR json_extract(attributes, '$.event.name') = 'tool_result')
+                       AND json_extract(attributes, '$.tool_name') IS NOT NULL
+                     GROUP BY tool ORDER BY cnt DESC LIMIT 5",
+                    vec![],
+                )
+            };
+            let mut stmt = conn.prepare(sql)?;
+            let param_refs: Vec<&dyn rusqlite::types::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+            let rows: Vec<(String, i64)> = stmt
+                .query_map(param_refs.as_slice(), |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
                 })?
                 .filter_map(Result::ok)
                 .collect();
@@ -806,6 +928,9 @@ fn row_to_session(row: &rusqlite::Row) -> rusqlite::Result<SessionRecord> {
         summary: row.get(11)?,
         cost_usd: row.get(12)?,
         cc_session_id: row.get(13)?,
+        model: row.get(14)?,
+        first_prompt: row.get(15)?,
+        error_count: row.get(16)?,
     })
 }
 
@@ -830,6 +955,14 @@ fn row_to_api_call(row: &rusqlite::Row) -> rusqlite::Result<ApiCallRecord> {
 }
 
 // ── Types ─────────────────────────────────────────────────────────────
+
+#[derive(Debug)]
+pub struct AggregateStats {
+    pub session_count: i64,
+    pub total_cost: f64,
+    pub total_input: i64,
+    pub total_output: i64,
+}
 
 #[derive(Debug)]
 pub struct SessionStats {
@@ -875,6 +1008,9 @@ pub struct SessionRecord {
     pub summary: Option<String>,
     pub cost_usd: Option<f64>,
     pub cc_session_id: Option<String>,
+    pub model: Option<String>,
+    pub first_prompt: Option<String>,
+    pub error_count: Option<i64>,
 }
 
 #[derive(Debug, serde::Serialize)]
