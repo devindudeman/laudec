@@ -22,8 +22,10 @@
   let tab = $state('proxy');
   let loading = $state(true);
   let expandedCalls = $state({});
+  let collapsedConversations = $state({});
+  let expandedEvents = $state({});
 
-  onMount(async () => {
+  async function load() {
     try {
       const [d, c] = await Promise.all([
         fetchSession(id),
@@ -31,11 +33,24 @@
       ]);
       detail = d;
       calls = c;
+      // Refresh tab-specific data if already loaded
+      if (events.length > 0) {
+        events = await fetchEvents(id);
+      }
+      if (tools.length > 0) {
+        tools = await fetchTools(id);
+      }
     } catch (e) {
       console.error('Failed to load session:', e);
     } finally {
       loading = false;
     }
+  }
+
+  onMount(() => {
+    load();
+    const timer = setInterval(load, 5000);
+    return () => clearInterval(timer);
   });
 
   async function loadEvents() {
@@ -62,6 +77,56 @@
 
   function toggleCall(i) {
     expandedCalls = { ...expandedCalls, [i]: !expandedCalls[i] };
+  }
+
+  function toggleConversation(i, e) {
+    e.stopPropagation();
+    collapsedConversations = { ...collapsedConversations, [i]: !collapsedConversations[i] };
+  }
+
+  function toggleEvent(key) {
+    expandedEvents = { ...expandedEvents, [key]: !expandedEvents[key] };
+  }
+
+  function eventKeyFields(eventName, attrs) {
+    switch (eventName) {
+      case 'user_prompt':
+        return [
+          { label: 'Prompt', value: attrs.prompt, cls: 'prompt-val' },
+          attrs.prompt_length && { label: 'Length', value: `${attrs.prompt_length} chars` },
+        ].filter(Boolean);
+      case 'api_request':
+        return [
+          { label: 'Model', value: attrs.model },
+          { label: 'Input', value: fmtTokens(attrs.input_tokens) },
+          { label: 'Output', value: fmtTokens(attrs.output_tokens) },
+          Number(attrs.cache_read_tokens) > 0 && { label: 'Cache Read', value: fmtTokens(attrs.cache_read_tokens) },
+          Number(attrs.cache_creation_tokens) > 0 && { label: 'Cache Write', value: fmtTokens(attrs.cache_creation_tokens) },
+          attrs.cost_usd && { label: 'Cost', value: `$${Number(attrs.cost_usd).toFixed(4)}` },
+          attrs.duration_ms && { label: 'Duration', value: fmtMs(attrs.duration_ms) },
+          attrs.speed && { label: 'Speed', value: attrs.speed },
+        ].filter(Boolean);
+      case 'tool_decision':
+        return [
+          { label: 'Tool', value: attrs.tool_name },
+          { label: 'Decision', value: attrs.decision },
+          { label: 'Source', value: attrs.source },
+        ].filter(f => f.value != null);
+      case 'tool_result':
+        return [
+          { label: 'Tool', value: attrs.tool_name },
+          { label: 'Success', value: attrs.success },
+          attrs.duration_ms && { label: 'Duration', value: fmtMs(attrs.duration_ms) },
+          attrs.tool_result_size_bytes && { label: 'Result Size', value: Number(attrs.tool_result_size_bytes) >= 1000 ? `${(Number(attrs.tool_result_size_bytes)/1000).toFixed(1)}KB` : `${attrs.tool_result_size_bytes}B` },
+          attrs.error && { label: 'Error', value: attrs.error },
+        ].filter(Boolean);
+      default:
+        return Object.entries(attrs).slice(0, 8).map(([k, v]) => ({ label: k, value: String(v) }));
+    }
+  }
+
+  function rawAttrsJson(attrs) {
+    try { return JSON.stringify(attrs, null, 2); } catch { return '{}'; }
   }
 
   function tryPrettyJson(str) {
@@ -228,6 +293,76 @@
 
   let stats = $derived(detail?.stats || {});
   let session = $derived(detail?.session || {});
+
+  function classifyCall(call) {
+    const label = { type: 'UNKNOWN', detail: null, tools: [] };
+
+    let body = {};
+    try { body = JSON.parse(call.request_body || '{}'); } catch {}
+
+    // Tier 1: Type
+    if (body.max_tokens === 1) {
+      label.type = 'QUOTA';
+      return label;
+    }
+    if ((call.path || '').includes('count_tokens')) {
+      label.type = 'TOKEN COUNT';
+      return label;
+    }
+    if (body.thinking) {
+      label.type = 'MAIN';
+    } else if (body.system && body.tools) {
+      label.type = 'SUBAGENT';
+      const sys = JSON.stringify(body.system);
+      if (sys.includes('file search specialist') || sys.includes('READ-ONLY MODE')) {
+        label.detail = 'EXPLORE';
+      } else if (sys.includes('web search tool use')) {
+        label.detail = 'WEB SEARCH';
+      } else if (sys.includes('Claude Code Guide')) {
+        label.detail = 'CC GUIDE';
+      }
+    }
+
+    // Tier 2: Enrichment — extract tool_use names from assistant messages
+    const msgs = body.messages || [];
+    const toolCounts = {};
+    for (const m of msgs) {
+      if (m.role === 'assistant' && Array.isArray(m.content)) {
+        for (const block of m.content) {
+          if (block.type === 'tool_use' && block.name) {
+            toolCounts[block.name] = (toolCounts[block.name] || 0) + 1;
+          }
+        }
+      }
+    }
+    label.tools = Object.entries(toolCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 4);
+
+    return label;
+  }
+
+  let callLabels = $derived.by(() => {
+    let turnNum = 0;
+    return calls.map(c => {
+      const label = classifyCall(c);
+      if (label.type === 'MAIN') {
+        let body = {};
+        try { body = JSON.parse(c.request_body || '{}'); } catch {}
+        const msgs = body.messages || [];
+        const lastUser = [...msgs].reverse().find(m => m.role === 'user');
+        const hasToolResult = lastUser && Array.isArray(lastUser.content) &&
+          lastUser.content.some(b => b.type === 'tool_result');
+        if (hasToolResult) {
+          label.detail = 'TOOL LOOP';
+        } else {
+          turnNum++;
+          label.detail = `TURN ${turnNum}`;
+        }
+      }
+      return label;
+    });
+  });
 </script>
 
 <a class="back" href="#/">&larr; SESSIONS</a>
@@ -280,22 +415,37 @@
       <div class="proxy-calls">
         {#each calls as c, i}
           {@const parsed = splitUserQuery(c.request_body)}
-          <div class="proxy-card">
+          {@const label = callLabels[i]}
+          {@const hasConversation = !!(parsed?.userText || parsed?.systemBlocks?.length || c.response_text)}
+          <div class="proxy-card proxy-card-{label.type.toLowerCase().replace(' ', '-')}" class:proxy-card-error={c.status_code >= 400}>
             <div class="proxy-summary" onclick={() => toggleCall(i)} role="button" tabindex="0" onkeydown={(e) => e.key === 'Enter' && toggleCall(i)}>
-              <span class="proxy-ts">{fmtTime(c.timestamp)}</span>
-              <span class="proxy-method">{c.method}</span>
-              <span class="proxy-path">{c.path}</span>
-              <span class="proxy-status" style="color: {c.status_code < 400 ? 'var(--ok)' : 'var(--fail)'}">{c.status_code ?? '-'}</span>
-              <span class="proxy-model">{c.model || '-'}</span>
-              <span class="proxy-latency">{fmtMs(c.latency_ms)}</span>
-              <span class="proxy-tokens">{fmtTokens(c.input_tokens)} in / {fmtTokens(c.output_tokens)} out</span>
-              {#if c.cache_read}<span class="proxy-cache">cache: {fmtTokens(c.cache_read)}</span>{/if}
-              <span class="proxy-expand">{expandedCalls[i] ? '▼' : '▶'}</span>
+              <div class="proxy-summary-left">
+                <span class="proxy-ts">{fmtTime(c.timestamp)}</span>
+                <span class="proxy-type-pill proxy-type-{label.type.toLowerCase().replace(' ', '-')}">{label.detail || label.type}</span>
+                {#if c.status_code >= 400}<span class="proxy-status" style="color: var(--fail)">{c.status_code}</span>{/if}
+                {#if hasConversation}
+                  <button class="proxy-conv-toggle" onclick={(e) => toggleConversation(i, e)}>CONV {collapsedConversations[i] ? '▶' : '▼'}</button>
+                {/if}
+              </div>
+              <div class="proxy-summary-center">
+                <span class="proxy-model">{c.model || '-'}</span>
+                <span class="proxy-latency">{fmtMs(c.latency_ms)}</span>
+              </div>
+              <div class="proxy-summary-right">
+                <span class="proxy-token-group">
+                  <span class="proxy-tokens">{fmtTokens(c.input_tokens)} in / {fmtTokens(c.output_tokens)} out</span>
+                  {#if c.cache_read}<span class="proxy-cache">cache: {fmtTokens(c.cache_read)}</span>{/if}
+                </span>
+                {#if label.tools.length > 0}
+                  <span class="proxy-tool-tags">{label.tools.map(([name, count]) => count > 1 ? `${name} ×${count}` : name).join(' · ')}</span>
+                {/if}
+                <span class="proxy-expand">RAW {expandedCalls[i] ? '▼' : '▶'}</span>
+              </div>
             </div>
 
-            {#if parsed?.userText || parsed?.systemBlocks.length || c.response_text}
+            {#if hasConversation && !collapsedConversations[i]}
               <div class="proxy-conversation">
-                {#if parsed?.userText || parsed?.systemBlocks.length}
+                {#if parsed?.userText || parsed?.systemBlocks?.length}
                   <div class="proxy-msg proxy-msg-user">
                     <span class="proxy-msg-label proxy-msg-label-user">YOU</span>
                     {#if parsed.userText}
@@ -328,6 +478,7 @@
 
             {#if expandedCalls[i]}
               <div class="proxy-details">
+                <div class="proxy-details-label">Raw</div>
                 {#if c.request_headers}
                   <details class="proxy-section">
                     <summary>Request Headers</summary>
@@ -369,27 +520,39 @@
           <div class="turn">
             <!-- User prompt -->
             {#if turn.prompt}
+              {@const promptKey = `${ti}-prompt-0`}
               <div class="turn-prompt">
-                <div class="turn-prompt-header">
+                <div class="turn-prompt-header event-expandable" onclick={() => toggleEvent(promptKey)} role="button" tabindex="0" onkeydown={(e) => e.key === 'Enter' && toggleEvent(promptKey)}>
                   <span class="turn-number">#{ti + 1}</span>
                   <span class="turn-label prompt-label">YOU</span>
                   <span class="turn-ts">{fmtTime(turn.prompt.ev.timestamp)}</span>
                   {#if turn.prompt.attrs.prompt_length}
                     <span class="turn-meta">{turn.prompt.attrs.prompt_length} chars</span>
                   {/if}
+                  <span class="event-expand-arrow">{expandedEvents[promptKey] ? '▼' : '▶'}</span>
                 </div>
                 <div class="turn-prompt-text">{turn.prompt.attrs.prompt || '(empty)'}</div>
+                {#if expandedEvents[promptKey]}
+                  <div class="event-details">
+                    <details class="event-raw-attrs" open>
+                      <summary>Raw Attributes</summary>
+                      <pre class="json-hl">{@html highlightJson(rawAttrsJson(turn.prompt.attrs))}</pre>
+                    </details>
+                  </div>
+                {/if}
               </div>
             {/if}
 
             <!-- API requests for this turn -->
-            {#each turn.apiRequests as req}
+            {#each turn.apiRequests as req, ri}
+              {@const apiKey = `${ti}-api-${ri}`}
               <div class="turn-api">
-                <div class="turn-api-header">
+                <div class="turn-api-header event-expandable" onclick={() => toggleEvent(apiKey)} role="button" tabindex="0" onkeydown={(e) => e.key === 'Enter' && toggleEvent(apiKey)}>
                   <span class="turn-label api-label">API</span>
                   <span class="turn-ts">{fmtTime(req.ev.timestamp)}</span>
                   <span class="turn-model">{req.attrs.model || '-'}</span>
                   <span class="turn-meta">{fmtMs(req.attrs.duration_ms)}</span>
+                  <span class="event-expand-arrow">{expandedEvents[apiKey] ? '▼' : '▶'}</span>
                 </div>
                 <div class="turn-api-stats">
                   <span class="tok-pill input">{fmtTokens(req.attrs.input_tokens)} in</span>
@@ -404,27 +567,57 @@
                     <span class="turn-meta">speed: {req.attrs.speed}</span>
                   {/if}
                 </div>
+                {#if expandedEvents[apiKey]}
+                  <div class="event-details">
+                    <div class="event-key-fields">
+                      {#each eventKeyFields('api_request', req.attrs) as f}
+                        <span class="event-key-label">{f.label}</span>
+                        <span class="event-key-value">{f.value}</span>
+                      {/each}
+                    </div>
+                    <details class="event-raw-attrs">
+                      <summary>Raw Attributes</summary>
+                      <pre class="json-hl">{@html highlightJson(rawAttrsJson(req.attrs))}</pre>
+                    </details>
+                  </div>
+                {/if}
               </div>
             {/each}
 
             <!-- Tool operations for this turn -->
             {#if turn.toolOps.length > 0}
               <div class="turn-tools">
-                {#each turn.toolOps as op}
+                {#each turn.toolOps as op, oi}
+                  {@const opKey = `${ti}-tool-${oi}`}
                   {#if op.eventName === 'tool_decision'}
                     <div class="tool-op tool-decision-op">
-                      <div class="tool-op-row">
+                      <div class="tool-op-row event-expandable" onclick={() => toggleEvent(opKey)} role="button" tabindex="0" onkeydown={(e) => e.key === 'Enter' && toggleEvent(opKey)}>
                         <span class="tool-op-icon">{op.attrs.decision === 'accept' || op.attrs.decision === 'approved' ? '>' : 'x'}</span>
                         <span class="tool-op-name">{op.attrs.tool_name || '-'}</span>
                         <span class="tool-op-detail">
                           {op.attrs.decision || '-'}
                           <span class="tool-op-source">({op.attrs.source || '-'})</span>
                         </span>
+                        <span class="event-expand-arrow">{expandedEvents[opKey] ? '▼' : '▶'}</span>
                       </div>
+                      {#if expandedEvents[opKey]}
+                        <div class="event-details">
+                          <div class="event-key-fields">
+                            {#each eventKeyFields('tool_decision', op.attrs) as f}
+                              <span class="event-key-label">{f.label}</span>
+                              <span class="event-key-value">{f.value}</span>
+                            {/each}
+                          </div>
+                          <details class="event-raw-attrs">
+                            <summary>Raw Attributes</summary>
+                            <pre class="json-hl">{@html highlightJson(rawAttrsJson(op.attrs))}</pre>
+                          </details>
+                        </div>
+                      {/if}
                     </div>
                   {:else if op.eventName === 'tool_result'}
                     <div class="tool-op tool-result-op {op.attrs.success === 'true' ? 'tool-ok' : 'tool-fail'}">
-                      <div class="tool-op-row">
+                      <div class="tool-op-row event-expandable" onclick={() => toggleEvent(opKey)} role="button" tabindex="0" onkeydown={(e) => e.key === 'Enter' && toggleEvent(opKey)}>
                         <span class="tool-op-icon">{op.attrs.success === 'true' ? '+' : '!'}</span>
                         <span class="tool-op-name">{op.attrs.tool_name || '-'}</span>
                         <span class="tool-op-detail">
@@ -438,15 +631,30 @@
                             &middot; {Number(op.attrs.tool_result_size_bytes) >= 1000 ? `${(Number(op.attrs.tool_result_size_bytes)/1000).toFixed(1)}KB` : `${op.attrs.tool_result_size_bytes}B`}
                           {/if}
                         </span>
+                        <span class="event-expand-arrow">{expandedEvents[opKey] ? '▼' : '▶'}</span>
                       </div>
                       {#if op.attrs.error}
                         <div class="tool-op-error">{op.attrs.error}</div>
                       {/if}
-                      {#if op.attrs.tool_parameters}
-                        <details class="tool-op-params">
-                          <summary>parameters</summary>
-                          <pre class="json-hl">{@html prettyJsonHtml(op.attrs.tool_parameters)}</pre>
-                        </details>
+                      {#if expandedEvents[opKey]}
+                        <div class="event-details">
+                          <div class="event-key-fields">
+                            {#each eventKeyFields('tool_result', op.attrs) as f}
+                              <span class="event-key-label">{f.label}</span>
+                              <span class="event-key-value">{f.value}</span>
+                            {/each}
+                          </div>
+                          {#if op.attrs.tool_parameters}
+                            <details class="event-raw-attrs">
+                              <summary>Parameters</summary>
+                              <pre class="json-hl">{@html prettyJsonHtml(op.attrs.tool_parameters)}</pre>
+                            </details>
+                          {/if}
+                          <details class="event-raw-attrs">
+                            <summary>Raw Attributes</summary>
+                            <pre class="json-hl">{@html highlightJson(rawAttrsJson(op.attrs))}</pre>
+                          </details>
+                        </div>
                       {/if}
                     </div>
                   {/if}
