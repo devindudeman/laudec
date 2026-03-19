@@ -36,10 +36,15 @@ That's it. laudec launches Claude Code with instrumentation wired up automatical
 
 ### Proxy Tab
 Full API traffic inspection for every request to Anthropic:
-- User query and model response rendered as markdown
+- Calls classified by type (MAIN, SUBAGENT, QUOTA, TOKEN COUNT) with color-coded pills
+- MAIN calls labeled by turn number or tool loop
+- Subagent calls tagged with role (EXPLORE, WEB SEARCH, CC GUIDE)
+- User query and model response rendered as markdown, collapsible per card
+- Tool usage summary per call (e.g. `Read x3 · Edit x2`)
+- Error calls (status >= 400) highlighted with red card tint
 - System-injected blocks (system reminders, tool rules) in collapsible sections
 - Request/response bodies with JSON syntax highlighting
-- Token counts, latency, model, and status per call
+- Token counts, cache, latency, model, and status per call
 
 ### Events Tab
 OTEL telemetry grouped by conversation turn:
@@ -87,6 +92,7 @@ laudec log --all                # All projects
 laudec calls --session ID       # View API calls for a session
 laudec events --session ID      # View OTEL events
 laudec replay SESSION_ID        # Replay a session timeline
+laudec stats                    # Show usage statistics
 laudec init                     # Generate starter laudec.toml
 laudec config                   # Print resolved configuration
 ```
