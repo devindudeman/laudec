@@ -1,0 +1,22 @@
+# Rust
+/target
+
+# Dashboard
+dashboard/node_modules
+dashboard/dist
+
+# Data
+*.db
+*.db-wal
+*.db-shm
+
+# OS
+.DS_Store
+
+# Editor
+*.swp
+*.swo
+*~
+
+# Working notes
+/plan
