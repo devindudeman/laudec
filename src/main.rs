@@ -576,8 +576,9 @@ async fn cmd_run(project_path: &std::path::Path, prompt: Option<&str>) -> Result
         // Push API calls
         let calls = database.list_api_calls(Some(&run_id), 1000).await?;
         if !calls.is_empty() {
+            let push_bodies = cfg.cloud.push_bodies;
             let call_records: Vec<cloud::CallRecord> =
-                calls.iter().map(cloud::CallRecord::from).collect();
+                calls.iter().map(|c| cloud::CallRecord::from_db(c, push_bodies)).collect();
             // Batch in groups of 50 to stay within Convex mutation limits
             for chunk in call_records.chunks(50) {
                 pusher.push_calls(cloud::CallsPayload {

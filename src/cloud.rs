@@ -75,8 +75,14 @@ pub struct CallRecord {
     pub cache_read: Option<i64>,
     pub cache_write: Option<i64>,
     pub response_text: Option<String>,
-    // Omit full request/response bodies by default (too large)
-    // They remain in local SQLite for the local dashboard
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub request_body: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub response_body: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub request_headers: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub response_headers: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -241,8 +247,8 @@ async fn post_json<T: Serialize>(
 
 // ── Conversion helpers (from DB records) ─────────────────────────────
 
-impl From<&ApiCallRecord> for CallRecord {
-    fn from(c: &ApiCallRecord) -> Self {
+impl CallRecord {
+    pub fn from_db(c: &ApiCallRecord, push_bodies: bool) -> Self {
         Self {
             call_id: format!("{}-{}", c.timestamp, c.path),
             timestamp: c.timestamp.clone(),
@@ -256,6 +262,10 @@ impl From<&ApiCallRecord> for CallRecord {
             cache_read: c.cache_read,
             cache_write: c.cache_write,
             response_text: c.response_text.clone(),
+            request_body: if push_bodies { c.request_body.clone() } else { None },
+            response_body: if push_bodies { c.response_body.clone() } else { None },
+            request_headers: if push_bodies { c.request_headers.clone() } else { None },
+            response_headers: if push_bodies { c.response_headers.clone() } else { None },
         }
     }
 }
