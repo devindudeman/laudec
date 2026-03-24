@@ -7,6 +7,7 @@ import { useState } from "react";
 import { SessionsList } from "./SessionsList";
 import { TeamSetup } from "./TeamSetup";
 import { Id } from "../../convex/_generated/dataModel";
+import Link from "next/link";
 
 export function Dashboard() {
   const { signOut } = useAuthActions();
@@ -50,12 +51,20 @@ export function Dashboard() {
             ))}
           </select>
         </div>
-        <button
-          onClick={() => void signOut()}
-          className="text-gray-400 hover:text-gray-200 text-sm"
-        >
-          Sign out
-        </button>
+        <div className="flex items-center gap-4">
+          <Link
+            href="/settings"
+            className="text-zinc-400 hover:text-zinc-200 text-sm"
+          >
+            Settings
+          </Link>
+          <button
+            onClick={() => void signOut()}
+            className="text-zinc-400 hover:text-zinc-200 text-sm"
+          >
+            Sign out
+          </button>
+        </div>
       </header>
 
       {/* Main content */}
