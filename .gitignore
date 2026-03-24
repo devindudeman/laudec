@@ -20,3 +20,6 @@ dashboard/dist
 
 # Working notes
 /plan
+cloud-dashboard/node_modules/
+cloud-dashboard/.next/
+cloud-dashboard/.env.local
