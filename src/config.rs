@@ -316,7 +316,7 @@ summary = true
 # enabled = true
 # endpoint = "https://your-project.convex.site"
 # api_key = "ldc_..."
-# push_bodies = false  # Push full request/response bodies (large)
+# push_bodies = true  # Set to false to skip request/response bodies (saves bandwidth)
 "#
     }
 }

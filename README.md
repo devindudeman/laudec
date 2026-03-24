@@ -153,6 +153,7 @@ deny = []                 # Tool deny list
 # enabled = true
 # endpoint = "https://your-project.convex.site"
 # api_key = "ldc_..."
+# push_bodies = true  # Set false to skip request/response bodies
 ```
 
 ### Remote mode
@@ -169,32 +170,112 @@ remote = "http://shared-collector:14317"
 
 ## Cloud Dashboard
 
-laudec can push session data to a centralized cloud dashboard powered by Convex. This gives you a shared, multi-user view of all Claude Code sessions across your team.
+laudec can push session data to a centralized cloud dashboard powered by [Convex](https://www.convex.dev/). This gives you a shared, multi-user, real-time view of all Claude Code sessions across your team.
 
-### Setup
+Features:
+- **Multi-tenant** — sign in with GitHub or Google, create teams, invite members
+- **Live updates** — sessions appear in the dashboard as they happen (powered by Convex's reactive queries)
+- **Full proxy inspection** — same call classification (MAIN/SUBAGENT/QUOTA), conversation view (YOU/MODEL), and raw request/response bodies as the local dashboard
+- **OTEL events** — prompts, API requests, tool decisions/results grouped by turn
+- **Metrics** — cost, token breakdown, latency, cache hit rate
+- **API keys** — per-team keys for authenticating laudec instances
+- **Offline-safe** — data always goes to local SQLite first; cloud push is best-effort and non-blocking
 
-1. Sign in at your cloud dashboard URL and create a team
-2. Go to Settings → create an API key
-3. Add to your `laudec.toml`:
+### Quick Start
+
+1. **Sign in** at your cloud dashboard URL and create a team
+2. **Create an API key** in Settings → copy the `ldc_...` key
+3. **Configure laudec** — add to `~/.config/laudec/config.toml` (global) or `laudec.toml` (per-project):
+
+```toml
+[cloud]
+enabled = true
+endpoint = "https://your-project.convex.site"
+api_key = "ldc_your_key_here"
+```
+
+4. **Run laudec** — you'll see `cloud push enabled` in the banner:
+
+```
+laudec .
+```
+
+5. **Check the dashboard** — your session appears in real-time with full drill-down
+
+### What gets pushed
+
+By default, laudec pushes:
+
+- **Session metadata** — project, duration, tokens, cost, model, files changed, summary
+- **API call log** — timestamps, models, token counts, latency, cache stats, response text, full request/response bodies and headers
+- **OTEL events** — user prompts, API requests, tool decisions, tool results with attributes
+
+The proxy tab's call classifier (MAIN/SUBAGENT/QUOTA/TOKEN COUNT) and conversation view (YOU/MODEL) require request bodies to work. If you want to save bandwidth and only see session summaries, set `push_bodies = false`:
 
 ```toml
 [cloud]
 enabled = true
 endpoint = "https://your-project.convex.site"
 api_key = "ldc_..."
+push_bodies = false  # Only push metadata, not full request/response bodies
 ```
 
-4. Run `laudec .` — sessions appear in the cloud dashboard in real-time
+### Deploying the Cloud Dashboard
 
-Data always goes to local SQLite first. Cloud push is best-effort and non-blocking — if the cloud is unreachable, your local workflow is unaffected.
+The cloud dashboard is a Next.js app backed by Convex. To deploy your own:
 
-### What gets pushed
+```bash
+cd cloud-dashboard
 
-- Session metadata (project, duration, tokens, cost, model, files changed)
-- API call log (timestamps, models, token counts, latency, response text)
-- OTEL events (prompts, tool decisions, tool results)
+# Install dependencies
+npm install
 
-Full request/response bodies are **not** pushed by default (they're large). Enable with `push_bodies = true`.
+# Set up Convex (creates a new project)
+npx convex dev --once
+
+# Generate auth keys
+node generateKeys.mjs
+# Copy the output (JWT_PRIVATE_KEY and JWKS) to Convex env vars
+
+# Set required environment variables in the Convex dashboard:
+# - SITE_URL: your frontend URL (e.g. https://your-app.vercel.app)
+# - JWT_PRIVATE_KEY: from generateKeys.mjs
+# - JWKS: from generateKeys.mjs
+# - AUTH_GITHUB_ID / AUTH_GITHUB_SECRET: from a GitHub OAuth App
+# - AUTH_GOOGLE_ID / AUTH_GOOGLE_SECRET: (optional) from Google Cloud Console
+
+# For the GitHub OAuth App, set:
+#   Homepage URL: https://your-project.convex.site
+#   Callback URL: https://your-project.convex.site/api/auth/callback/github
+
+# Run the frontend locally
+npm run dev
+
+# Or deploy to Vercel
+npx vercel
+```
+
+### Architecture
+
+```
+laudec (local)                    Convex (cloud)                 Next.js Dashboard
+─────────────                    ──────────────                 ─────────────────
+proxy + collector                                               
+      │                                                         
+      ├─ POST /api/ingest/* ──▶  HTTP Actions (auth + ingest)  React + Tailwind
+      │   session, calls,         ├─ validate API key           ├─ GitHub/Google auth
+      │   otel events             ├─ strip nulls                ├─ real-time sessions
+      │                           └─ write to Convex DB         ├─ proxy/events/metrics
+      └─ local SQLite                                           └─ team/key management
+         (always written          Convex DB                           ▲
+          first, works            ├─ users (OAuth)                    │
+          offline)                ├─ teams + members            useQuery() reactive
+                                  ├─ apiKeys                    subscriptions via
+                                  ├─ sessions                   WebSocket
+                                  ├─ apiCalls                         │
+                                  └─ otelEvents                       │
+                                                                Convex ◀─── WebSocket
+```
 
 ## Building from Source
 

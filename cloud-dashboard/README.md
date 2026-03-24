@@ -1,36 +1,97 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# laudec cloud dashboard
 
-## Getting Started
+Centralized, multi-tenant dashboard for Claude Code sessions. Powered by [Convex](https://www.convex.dev/) and Next.js.
 
-First, run the development server:
+## Stack
+
+- **Backend**: [Convex](https://www.convex.dev/) — reactive database, TypeScript server functions, real-time subscriptions
+- **Frontend**: Next.js 16 + React + Tailwind CSS
+- **Auth**: GitHub + Google OAuth via [@convex-dev/auth](https://labs.convex.dev/auth)
+
+## Setup
+
+### 1. Install dependencies
+
+```bash
+npm install
+```
+
+### 2. Set up Convex
+
+```bash
+npx convex dev --once
+```
+
+This creates a Convex project and writes URLs to `.env.local`.
+
+### 3. Generate auth keys
+
+```bash
+node generateKeys.mjs
+```
+
+Copy the output (`JWT_PRIVATE_KEY` and `JWKS`) to your Convex deployment's environment variables.
+
+### 4. Set environment variables
+
+In the [Convex dashboard](https://dashboard.convex.dev/) → Settings → Environment Variables:
+
+| Variable | Description |
+|----------|-------------|
+| `SITE_URL` | Your frontend URL (e.g. `http://localhost:3000` for dev) |
+| `JWT_PRIVATE_KEY` | From `generateKeys.mjs` |
+| `JWKS` | From `generateKeys.mjs` |
+| `AUTH_GITHUB_ID` | GitHub OAuth App client ID |
+| `AUTH_GITHUB_SECRET` | GitHub OAuth App client secret |
+| `AUTH_GOOGLE_ID` | (Optional) Google OAuth client ID |
+| `AUTH_GOOGLE_SECRET` | (Optional) Google OAuth client secret |
+
+For the **GitHub OAuth App**:
+- Homepage URL: `https://your-project.convex.site`
+- Authorization callback URL: `https://your-project.convex.site/api/auth/callback/github`
+
+### 5. Run
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open http://localhost:3000 → Sign in with GitHub → Create a team → Create an API key.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Convex Schema
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Table | Purpose |
+|-------|---------|
+| `users` | OAuth users (managed by @convex-dev/auth) |
+| `teams` | Multi-tenant teams |
+| `teamMembers` | Team membership with roles (owner/admin/member) |
+| `apiKeys` | Per-team API keys for laudec auth |
+| `sessions` | Claude Code sessions pushed from laudec |
+| `apiCalls` | Proxy log entries (API calls to Anthropic) |
+| `otelEvents` | OTEL telemetry (prompts, tool decisions, tool results) |
 
-## Learn More
+## Ingest API
 
-To learn more about Next.js, take a look at the following resources:
+laudec pushes data to these HTTP endpoints (authenticated with Bearer token):
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/ingest/session` | POST | Create or update a session |
+| `/api/ingest/calls` | POST | Push a batch of API call records |
+| `/api/ingest/events` | POST | Push a batch of OTEL events |
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Dashboard Pages
 
-## Deploy on Vercel
+- `/` — Sessions list (table with time, duration, project, model, calls, cost)
+- `/session/[id]` — Session detail with Proxy, Events, and Metrics tabs
+- `/settings` — Team info, API key management, setup guide
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Deploying
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+The frontend can be deployed to Vercel, Netlify, or any static hosting:
+
+```bash
+npx vercel
+```
+
+The Convex backend is already in the cloud — no additional deployment needed.
