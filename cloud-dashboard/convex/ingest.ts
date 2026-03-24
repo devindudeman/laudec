@@ -205,7 +205,7 @@ export const insertEvents = internalMutation({
 // ── Auth helper ─────────────────────────────────────────────────────
 
 async function authenticateRequest(
-  ctx: { runQuery: typeof import("./_generated/server").internalQuery },
+  ctx: { runQuery: (query: any, args: any) => Promise<any> },
   req: Request
 ): Promise<Id<"teams"> | null> {
   const authHeader = req.headers.get("Authorization");
@@ -214,7 +214,7 @@ async function authenticateRequest(
   const apiKey = authHeader.slice(7);
   const keyHash = simpleHash(apiKey);
 
-  const teamId: Id<"teams"> | null = await (ctx as any).runQuery(
+  const teamId: Id<"teams"> | null = await ctx.runQuery(
     internal.apiKeys.validateKey,
     { keyHash }
   );
