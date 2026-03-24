@@ -75,6 +75,16 @@ pub struct CallRecord {
     pub cache_read: Option<i64>,
     pub cache_write: Option<i64>,
     pub response_text: Option<String>,
+    // Classification metadata (always sent, extracted from request body)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub call_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub call_detail: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_tags: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub user_query: Option<String>,
+    // Full bodies (only when push_bodies=true)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub request_body: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -249,6 +259,10 @@ async fn post_json<T: Serialize>(
 
 impl CallRecord {
     pub fn from_db(c: &ApiCallRecord, push_bodies: bool) -> Self {
+        // Classify the call from request body (without sending the body itself)
+        let (call_type, call_detail, tool_tags, user_query) =
+            classify_call(c.request_body.as_deref(), &c.path);
+
         Self {
             call_id: format!("{}-{}", c.timestamp, c.path),
             timestamp: c.timestamp.clone(),
@@ -262,12 +276,155 @@ impl CallRecord {
             cache_read: c.cache_read,
             cache_write: c.cache_write,
             response_text: c.response_text.clone(),
+            call_type: Some(call_type),
+            call_detail,
+            tool_tags,
+            user_query,
             request_body: if push_bodies { c.request_body.clone() } else { None },
             response_body: if push_bodies { c.response_body.clone() } else { None },
             request_headers: if push_bodies { c.request_headers.clone() } else { None },
             response_headers: if push_bodies { c.response_headers.clone() } else { None },
         }
     }
+}
+
+/// Classify an API call from its request body, matching the logic in the
+/// Svelte/React dashboard but running on the Rust side.
+fn classify_call(request_body: Option<&str>, path: &str) -> (String, Option<String>, Option<String>, Option<String>) {
+    let body: serde_json::Value = request_body
+        .and_then(|b| serde_json::from_str(b).ok())
+        .unwrap_or(serde_json::Value::Null);
+
+    // Type classification
+    if body.get("max_tokens").and_then(|v| v.as_i64()) == Some(1) {
+        return ("QUOTA".into(), None, None, None);
+    }
+    if path.contains("count_tokens") {
+        return ("TOKEN COUNT".into(), None, None, None);
+    }
+
+    let mut call_type = "UNKNOWN".to_string();
+    let mut call_detail: Option<String> = None;
+
+    if body.get("thinking").is_some() {
+        call_type = "MAIN".into();
+    } else if body.get("system").is_some() && body.get("tools").is_some() {
+        call_type = "SUBAGENT".into();
+        if let Some(sys) = body.get("system") {
+            let sys_str = sys.to_string();
+            if sys_str.contains("file search specialist") || sys_str.contains("READ-ONLY MODE") {
+                call_detail = Some("EXPLORE".into());
+            } else if sys_str.contains("web search tool use") {
+                call_detail = Some("WEB SEARCH".into());
+            } else if sys_str.contains("Claude Code Guide") {
+                call_detail = Some("CC GUIDE".into());
+            }
+        }
+    }
+
+    // Extract tool usage tags from assistant messages
+    let mut tool_counts: Vec<(String, usize)> = Vec::new();
+    if let Some(msgs) = body.get("messages").and_then(|v| v.as_array()) {
+        let mut counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+        for m in msgs {
+            if m.get("role").and_then(|v| v.as_str()) == Some("assistant") {
+                if let Some(content) = m.get("content").and_then(|v| v.as_array()) {
+                    for block in content {
+                        if block.get("type").and_then(|v| v.as_str()) == Some("tool_use") {
+                            if let Some(name) = block.get("name").and_then(|v| v.as_str()) {
+                                *counts.entry(name.to_string()).or_insert(0) += 1;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        tool_counts = counts.into_iter().collect();
+        tool_counts.sort_by(|a, b| b.1.cmp(&a.1));
+        tool_counts.truncate(4);
+    }
+
+    let tool_tags = if tool_counts.is_empty() {
+        None
+    } else {
+        Some(
+            tool_counts
+                .iter()
+                .map(|(name, count)| {
+                    if *count > 1 {
+                        format!("{} ×{}", name, count)
+                    } else {
+                        name.clone()
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join(" · "),
+        )
+    };
+
+    // Extract the last user query (text only, strip system blocks)
+    let user_query = extract_user_query(&body);
+
+    (call_type, call_detail, tool_tags, user_query)
+}
+
+/// Extract the last user message text from a request body, stripping system-injected blocks.
+fn extract_user_query(body: &serde_json::Value) -> Option<String> {
+    let msgs = body.get("messages")?.as_array()?;
+    for m in msgs.iter().rev() {
+        if m.get("role").and_then(|v| v.as_str()) != Some("user") {
+            continue;
+        }
+        let raw = if let Some(s) = m.get("content").and_then(|v| v.as_str()) {
+            s.to_string()
+        } else if let Some(arr) = m.get("content").and_then(|v| v.as_array()) {
+            arr.iter()
+                .filter(|b| b.get("type").and_then(|v| v.as_str()) == Some("text"))
+                .filter_map(|b| b.get("text").and_then(|v| v.as_str()))
+                .collect::<Vec<_>>()
+                .join("\n")
+        } else {
+            continue;
+        };
+
+        // Strip system-injected XML blocks
+        let re_pattern = "<(system-reminder|available-deferred-tools|tool-use-rules|functions)>[\\s\\S]*?</\\1>";
+        let cleaned = regex_lite_strip(&raw, re_pattern);
+        let cleaned = cleaned.trim();
+        if cleaned.is_empty() {
+            continue;
+        }
+        // Truncate to 500 chars for the cloud
+        let truncated = if cleaned.len() > 500 {
+            format!("{}...", &cleaned[..cleaned.ceil_char_boundary(500)])
+        } else {
+            cleaned.to_string()
+        };
+        return Some(truncated);
+    }
+    None
+}
+
+/// Simple regex-like stripping for known XML system block patterns.
+fn regex_lite_strip(input: &str, _pattern: &str) -> String {
+    // Strip known system XML blocks without pulling in a regex crate
+    let tags = [
+        "system-reminder",
+        "available-deferred-tools",
+        "tool-use-rules",
+        "functions",
+    ];
+    let mut result = input.to_string();
+    for tag in &tags {
+        loop {
+            let open = format!("<{}>", tag);
+            let close = format!("</{}>", tag);
+            let Some(start) = result.find(&open) else { break };
+            let Some(end) = result[start..].find(&close) else { break };
+            result.replace_range(start..start + end + close.len(), "");
+        }
+    }
+    result
 }
 
 impl From<&OtelEventRecord> for EventRecord {

@@ -84,7 +84,12 @@ export default defineSchema({
     cacheRead: v.optional(v.number()),
     cacheWrite: v.optional(v.number()),
     responseText: v.optional(v.string()),
-    // Request/response bodies stored as strings (can be large)
+    // Classification metadata (always present, extracted on Rust side)
+    callType: v.optional(v.string()),
+    callDetail: v.optional(v.string()),
+    toolTags: v.optional(v.string()),
+    userQuery: v.optional(v.string()),
+    // Request/response bodies stored as strings (only when push_bodies=true)
     requestBody: v.optional(v.string()),
     responseBody: v.optional(v.string()),
     requestHeaders: v.optional(v.string()),

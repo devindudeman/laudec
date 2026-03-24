@@ -17,6 +17,10 @@ type ApiCall = {
   cacheRead?: number | null;
   cacheWrite?: number | null;
   responseText?: string | null;
+  callType?: string | null;
+  callDetail?: string | null;
+  toolTags?: string | null;
+  userQuery?: string | null;
   requestBody?: string | null;
   responseBody?: string | null;
   requestHeaders?: string | null;
@@ -81,9 +85,29 @@ export function ProxyTab({ calls }: { calls: ApiCall[] }) {
     return <div className="text-center py-12 text-zinc-500">No proxy data</div>;
   }
 
-  // Classify + label calls
+  // Classify + label calls — prefer server-side metadata, fall back to client-side parsing
   let turnNum = 0;
   const labels = calls.map((c) => {
+    // Use server-side classification if available
+    if (c.callType && c.callType !== "UNKNOWN") {
+      const label = {
+        type: c.callType,
+        detail: c.callDetail || null,
+        tools: c.toolTags
+          ? c.toolTags.split(" · ").map((t: string): [string, number] => {
+              const m = t.match(/^(.+?) ×(\d+)$/);
+              return m ? [m[1], parseInt(m[2])] : [t, 1];
+            })
+          : [],
+      };
+      // Add turn numbering for MAIN calls
+      if (label.type === "MAIN" && !label.detail) {
+        turnNum++;
+        label.detail = `TURN ${turnNum}`;
+      }
+      return label;
+    }
+    // Fall back to client-side classification (when requestBody is available)
     const label = classifyCall(c);
     if (label.type === "MAIN") {
       let body: any = {};
@@ -113,34 +137,37 @@ export function ProxyTab({ calls }: { calls: ApiCall[] }) {
     setCollapsedConv((prev) => ({ ...prev, [i]: !prev[i] }));
   }
 
-  // Extract user query and model response from request body
+  // Extract user query and model response — prefer server-side userQuery field
   function extractConversation(c: ApiCall) {
-    let userText: string | null = null;
+    let userText: string | null = c.userQuery || null;
     let modelResponse = c.responseText || null;
-    try {
-      const body = JSON.parse(c.requestBody || "{}");
-      const msgs = body.messages || [];
-      for (let i = msgs.length - 1; i >= 0; i--) {
-        if (msgs[i].role === "user") {
-          const content = msgs[i].content;
-          if (typeof content === "string") {
-            userText = content;
-          } else if (Array.isArray(content)) {
-            const texts = content
-              .filter((b: any) => b.type === "text")
-              .map((b: any) => b.text);
-            userText = texts.join("\n");
+
+    // Fall back to parsing requestBody if userQuery not available
+    if (!userText && c.requestBody) {
+      try {
+        const body = JSON.parse(c.requestBody);
+        const msgs = body.messages || [];
+        for (let i = msgs.length - 1; i >= 0; i--) {
+          if (msgs[i].role === "user") {
+            const content = msgs[i].content;
+            if (typeof content === "string") {
+              userText = content;
+            } else if (Array.isArray(content)) {
+              const texts = content
+                .filter((b: any) => b.type === "text")
+                .map((b: any) => b.text);
+              userText = texts.join("\n");
+            }
+            break;
           }
-          break;
         }
+      } catch {}
+      if (userText) {
+        userText = userText
+          .replace(/<(system-reminder|available-deferred-tools|tool-use-rules|functions)>[\s\S]*?<\/\1>/g, "")
+          .replace(/\n{3,}/g, "\n\n")
+          .trim() || null;
       }
-    } catch {}
-    // Strip system blocks from user text
-    if (userText) {
-      userText = userText
-        .replace(/<(system-reminder|available-deferred-tools|tool-use-rules|functions)>[\s\S]*?<\/\1>/g, "")
-        .replace(/\n{3,}/g, "\n\n")
-        .trim() || null;
     }
     return { userText, modelResponse };
   }
