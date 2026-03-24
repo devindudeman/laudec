@@ -17,6 +17,17 @@ function simpleHash(str: string): string {
 
 // ── HTTP Actions for laudec push ────────────────────────────────────
 
+// Strip null values from an object (Convex wants absent, not null, for optional fields)
+function stripNulls(obj: Record<string, any>): Record<string, any> {
+  const result: Record<string, any> = {};
+  for (const [key, value] of Object.entries(obj)) {
+    if (value !== null && value !== undefined) {
+      result[key] = value;
+    }
+  }
+  return result;
+}
+
 export const pushSession = httpAction(async (ctx, req) => {
   const teamId = await authenticateRequest(ctx, req);
   if (!teamId) {
@@ -29,7 +40,7 @@ export const pushSession = httpAction(async (ctx, req) => {
   const body = await req.json();
   const sessionId = await ctx.runMutation(internal.ingest.upsertSession, {
     teamId,
-    session: body,
+    session: stripNulls(body) as any,
   });
 
   return new Response(JSON.stringify({ sessionId }), {
@@ -51,7 +62,7 @@ export const pushCalls = httpAction(async (ctx, req) => {
   await ctx.runMutation(internal.ingest.insertCalls, {
     teamId,
     sessionId: body.sessionId as Id<"sessions">,
-    calls: body.calls,
+    calls: (body.calls || []).map((c: any) => stripNulls(c)),
   });
 
   return new Response(JSON.stringify({ ok: true }), {
@@ -73,7 +84,7 @@ export const pushEvents = httpAction(async (ctx, req) => {
   await ctx.runMutation(internal.ingest.insertEvents, {
     teamId,
     sessionId: body.sessionId as Id<"sessions">,
-    events: body.events,
+    events: (body.events || []).map((e: any) => stripNulls(e)),
   });
 
   return new Response(JSON.stringify({ ok: true }), {
