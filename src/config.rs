@@ -206,7 +206,7 @@ impl Default for CloudConfig {
             enabled: false,
             endpoint: None,
             api_key: None,
-            push_bodies: false,
+            push_bodies: true,
         }
     }
 }
