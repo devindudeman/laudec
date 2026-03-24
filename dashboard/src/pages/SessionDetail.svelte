@@ -430,7 +430,8 @@
         const hasToolResult = lastUser && Array.isArray(lastUser.content) &&
           lastUser.content.some(b => b.type === 'tool_result');
         if (hasToolResult) {
-          label.detail = 'TOOL LOOP';
+          // Continuation of current turn after tool results
+          label.detail = turnNum > 0 ? `TURN ${turnNum}+` : 'TOOL LOOP';
         } else {
           turnNum++;
           label.detail = `TURN ${turnNum}`;
@@ -526,7 +527,9 @@
               <div class="proxy-conversation">
                 {#if parsed?.userText || parsed?.systemBlocks?.length}
                   <div class="proxy-msg proxy-msg-user">
-                    <span class="proxy-msg-label proxy-msg-label-user">YOU</span>
+                    <span class="proxy-msg-label {label.type === 'SUBAGENT' ? 'proxy-msg-label-agent' : 'proxy-msg-label-user'}">
+                      {label.type === 'SUBAGENT' ? 'INSTRUCTION' : 'YOU'}
+                    </span>
                     {#if parsed.userText}
                       <div class="proxy-msg-text markdown">{@html renderMarkdown(parsed.userText)}</div>
                     {/if}

@@ -154,10 +154,12 @@ td.cost-high { color: var(--fail); font-weight: 700; }
 .proxy-msg-label { font-size: 10px; font-weight: 700; text-transform: uppercase;
   letter-spacing: 1px; padding: 1px 6px; border: 1px solid; display: inline-block; margin-bottom: 6px; }
 .proxy-msg-label-user { color: var(--accent); border-color: var(--accent); }
+.proxy-msg-label-agent { color: #7c3aed; border-color: #7c3aed; }
 .proxy-msg-label-model { color: var(--fg); border-color: var(--fg); }
 .proxy-msg-text { word-break: break-word; font-size: 12px;
   line-height: 1.6; max-height: 200px; overflow-y: auto; }
 .proxy-msg-user .proxy-msg-text { border-left: 3px solid var(--accent); padding-left: 10px; background: #fafafe; }
+.proxy-msg-user:has(.proxy-msg-label-agent) .proxy-msg-text { border-left-color: #7c3aed; background: #faf5ff; }
 .proxy-msg-model .proxy-msg-text { border-left: 3px solid var(--fg); padding-left: 10px; background: #fafaf5; }
 
 /* markdown inside proxy messages */
