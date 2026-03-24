@@ -14,6 +14,7 @@ import type * as http from "../http.js";
 import type * as ingest from "../ingest.js";
 import type * as sessions from "../sessions.js";
 import type * as teams from "../teams.js";
+import type * as testHelpers from "../testHelpers.js";
 
 import type {
   ApiFromModules,
@@ -28,6 +29,7 @@ declare const fullApi: ApiFromModules<{
   ingest: typeof ingest;
   sessions: typeof sessions;
   teams: typeof teams;
+  testHelpers: typeof testHelpers;
 }>;
 
 /**
