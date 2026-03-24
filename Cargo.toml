@@ -19,7 +19,7 @@ prost = "0.14"
 opentelemetry-proto = { version = "0.31", features = ["gen-tonic", "metrics", "logs"] }
 
 # HTTP client (forward to Anthropic)
-reqwest = { version = "0.13", default-features = false, features = ["rustls", "stream"] }
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "stream", "json"] }
 
 # Database
 rusqlite = { version = "0.39", features = ["bundled"] }

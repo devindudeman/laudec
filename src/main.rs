@@ -1,3 +1,4 @@
+mod cloud;
 mod collector;
 mod config;
 mod dashboard;
@@ -481,6 +482,42 @@ async fn cmd_run(project_path: &std::path::Path, prompt: Option<&str>) -> Result
         });
     }
 
+    // ── start cloud pusher ─────────────────────────────────────────
+    let cloud_pusher = cloud::CloudPusher::start(&cfg.cloud);
+    if cloud_pusher.is_some() {
+        tracing::info!("cloud push enabled");
+    }
+
+    // Push initial "active" session to cloud
+    if let Some(ref pusher) = cloud_pusher {
+        pusher.push_session(cloud::SessionPayload {
+            run_id: run_id.clone(),
+            cc_session_id: None,
+            project: project_name.clone(),
+            project_path: Some(project_path.to_string_lossy().to_string()),
+            started_at: started_at.clone(),
+            ended_at: None,
+            duration_secs: None,
+            api_call_count: None,
+            input_tokens: None,
+            output_tokens: None,
+            cache_read: None,
+            cache_write: None,
+            cost_usd: None,
+            model: None,
+            files_changed: None,
+            lines_added: None,
+            lines_removed: None,
+            changed_files: None,
+            summary: None,
+            tool_uses: None,
+            first_prompt: None,
+            error_count: None,
+            machine_id: None,
+            status: "active".into(),
+        });
+    }
+
     // Let servers bind
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
@@ -505,6 +542,73 @@ async fn cmd_run(project_path: &std::path::Path, prompt: Option<&str>) -> Result
     .await?;
 
     session::print_summary(&summary);
+
+    // ── push completed session + data to cloud ───────────────────────
+    if let Some(ref pusher) = cloud_pusher {
+        // Push completed session
+        pusher.push_session(cloud::SessionPayload {
+            run_id: run_id.clone(),
+            cc_session_id: cc_session_id.clone(),
+            project: project_name.clone(),
+            project_path: Some(project_path.to_string_lossy().to_string()),
+            started_at: started_at.clone(),
+            ended_at: Some(chrono::Utc::now().to_rfc3339()),
+            duration_secs: Some(summary.duration_secs),
+            api_call_count: Some(summary.api_calls),
+            input_tokens: Some(summary.input_tokens),
+            output_tokens: Some(summary.output_tokens),
+            cache_read: Some(summary.cache_read),
+            cache_write: None,
+            cost_usd: Some(summary.cost_usd),
+            model: summary.model.clone(),
+            files_changed: Some(summary.files_changed),
+            lines_added: Some(summary.lines_added),
+            lines_removed: Some(summary.lines_removed),
+            changed_files: None,
+            summary: summary.summary_text.clone(),
+            tool_uses: Some(summary.tool_uses),
+            first_prompt: None,
+            error_count: None,
+            machine_id: None,
+            status: "completed".into(),
+        });
+
+        // Push API calls
+        let calls = database.list_api_calls(Some(&run_id), 1000).await?;
+        if !calls.is_empty() {
+            let call_records: Vec<cloud::CallRecord> =
+                calls.iter().map(cloud::CallRecord::from).collect();
+            // Batch in groups of 50 to stay within Convex mutation limits
+            for chunk in call_records.chunks(50) {
+                pusher.push_calls(cloud::CallsPayload {
+                    session_id: String::new(), // Will be replaced by worker with cloud ID
+                    calls: chunk.to_vec(),
+                });
+            }
+        }
+
+        // Push OTEL events
+        let otel_id = cc_session_id.as_deref().unwrap_or(&run_id);
+        let events = database.list_otel_events(Some(otel_id), None, 1000).await?;
+        if !events.is_empty() {
+            let event_records: Vec<cloud::EventRecord> =
+                events.iter().map(cloud::EventRecord::from).collect();
+            for chunk in event_records.chunks(50) {
+                pusher.push_events(cloud::EventsPayload {
+                    session_id: String::new(),
+                    events: chunk.to_vec(),
+                });
+            }
+        }
+
+        // Give the worker time to flush
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    }
+
+    // Shut down cloud pusher
+    if let Some(pusher) = cloud_pusher {
+        pusher.shutdown().await;
+    }
 
     // Show replay hint
     let short_id = &run_id[..8];
@@ -633,6 +737,12 @@ fn print_banner(cfg: &config::Config, project_name: &str) {
         cfg.permissions.deny.len(),
         cfg.permissions.mode,
     );
+
+    if cfg.cloud.enabled {
+        if let Some(ref endpoint) = cfg.cloud.endpoint {
+            println!("  cloud:        {endpoint}");
+        }
+    }
 
     println!("\nLaunching Claude Code...");
     println!("────────────────────────────────────────────");

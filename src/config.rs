@@ -14,6 +14,7 @@ pub struct Config {
     pub dashboard: DashboardConfig,
     pub session: SessionConfig,
     pub claude: ClaudeConfig,
+    pub cloud: CloudConfig,
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -84,6 +85,18 @@ pub struct ClaudeConfig {
     pub claude_md: Option<String>,
 }
 
+#[derive(Debug, Deserialize, Serialize, Clone)]
+#[serde(default)]
+pub struct CloudConfig {
+    pub enabled: bool,
+    /// The Convex HTTP actions URL (e.g. https://your-project.convex.site)
+    pub endpoint: Option<String>,
+    /// API key for authentication (created in the cloud dashboard)
+    pub api_key: Option<String>,
+    /// Push full request/response bodies (large, disabled by default)
+    pub push_bodies: bool,
+}
+
 // --- Defaults ---
 
 impl Default for Config {
@@ -96,6 +109,7 @@ impl Default for Config {
             dashboard: DashboardConfig::default(),
             session: SessionConfig::default(),
             claude: ClaudeConfig::default(),
+            cloud: CloudConfig::default(),
         }
     }
 }
@@ -182,6 +196,17 @@ impl Default for ClaudeConfig {
         Self {
             model: None,
             claude_md: None,
+        }
+    }
+}
+
+impl Default for CloudConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            endpoint: None,
+            api_key: None,
+            push_bodies: false,
         }
     }
 }
@@ -285,6 +310,13 @@ summary = true
 [claude]
 # model = "claude-sonnet-4-20250514"
 # claude_md = "./CLAUDE.md"
+
+[cloud]
+# Push session data to a centralized Convex dashboard
+# enabled = true
+# endpoint = "https://your-project.convex.site"
+# api_key = "ldc_..."
+# push_bodies = false  # Push full request/response bodies (large)
 "#
     }
 }
