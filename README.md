@@ -147,6 +147,12 @@ deny = []                 # Tool deny list
 
 [claude]
 # model = "claude-sonnet-4-6"  # Override default model
+
+[cloud]
+# Push session data to a centralized cloud dashboard
+# enabled = true
+# endpoint = "https://your-project.convex.site"
+# api_key = "ldc_..."
 ```
 
 ### Remote mode
@@ -160,6 +166,35 @@ remote = "http://shared-proxy:18080"
 [telemetry]
 remote = "http://shared-collector:14317"
 ```
+
+## Cloud Dashboard
+
+laudec can push session data to a centralized cloud dashboard powered by Convex. This gives you a shared, multi-user view of all Claude Code sessions across your team.
+
+### Setup
+
+1. Sign in at your cloud dashboard URL and create a team
+2. Go to Settings → create an API key
+3. Add to your `laudec.toml`:
+
+```toml
+[cloud]
+enabled = true
+endpoint = "https://your-project.convex.site"
+api_key = "ldc_..."
+```
+
+4. Run `laudec .` — sessions appear in the cloud dashboard in real-time
+
+Data always goes to local SQLite first. Cloud push is best-effort and non-blocking — if the cloud is unreachable, your local workflow is unaffected.
+
+### What gets pushed
+
+- Session metadata (project, duration, tokens, cost, model, files changed)
+- API call log (timestamps, models, token counts, latency, response text)
+- OTEL events (prompts, tool decisions, tool results)
+
+Full request/response bodies are **not** pushed by default (they're large). Enable with `push_bodies = true`.
 
 ## Building from Source
 
