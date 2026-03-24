@@ -1,0 +1,13 @@
+import { execSync } from "child_process";
+
+const privateKey = `-----BEGIN PRIVATE KEY----- MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQCgTGX+AhCZDF95 NWWe/qspzAvelJM+Dau17kN+qO7bnkITPxT8ZPnw+hMr3c5x5V3Zv+cRddb6mXHJ +p0X0Mw15EUnWAhKpQx6q5xq1zip5fPOz9W0baJlfv/Nq+hLXIE2WtZh8oGFZyD8 m2flPGEh/sDkgQ8RTQaSoNkiODDgPgADFc5RqWxgHB7IgSZxg6JPA74kLnH4W5pr FCRZJwD95x4+pdEjnzsg4RtzschiUrIXBOdCbEtP/vgP961GVN0mgCDACt3d6BRN Xd3Wq/otR+ktJ3LNYb7OovildjV007OQjIM4afAeTwX3twPZKsFWL0BxEhETc2eM BlSyOoa3AgMBAAECggEAGu36zHuIUk3z1CcWVWmvU6xF6jTHr8sYJ85JZIP47Mhf jWAxpF1KaCN7CQmQXy4LYEOPDC3h2ePha+9AaPnY9MzOmVd+vRuRRyKBeqmBiXlq RjpASrmIaMi3LNROiCqYQotsLLRS8hhrQETTZX2JS+7CdSEBaQSpsAR5tff+rg04 QsD1yk9Xti94cMzzAgFOE1Ql731AtmKAX0Yz23JFmq6938wU8/G5Xzi8/jKdZkQv rcreSJDh2iitvq1Dh7zRmSkfUsWd6drRZfryPy2G102W8213DbV7QO4lkb7o7Gt4 JuurpGwp6+NEsDnLcWfvJpTMzyGcd00P9rIwuP/hoQKBgQDWYlPWPQtAMAZ8Sk/V 5LvDbm84RD5ZQYZ7R5dFO/yUewWA6T5LAxU5UO1krnNnf6eDDX4NMioNLXJMoxyN z8rdXXyP6d6iBqc+Ad459faDeRDaBFh6sNBhQ9enUXyeAima4dE31XbG/UMmDM84 Q0Zob+T9W1rZYr7I5MyPn9WVjwKBgQC/alIR3DrLeOGJX/rRP5/sKZW/x5bORWIO H6lBee/CSZTTK/iYrmeQamLxzskzJv3SN6UrjNw0fA5Gtt2VL5EtFGziW/DJaKbV /1GA83RzqXZ70E2h9d1gLur5iFOPR2hH95sxtvBosp7Dy4ErohcdpH0+Y7z+SLxD a2tDQPn4WQKBgQCNRQod2Of7Ciqb6JQnTKz2IWWk3EOBqY4m2owyEU9lwJNl2U01 PPjVZiCpAdQGVbZaw59WrsHLITF6ktmUEWOK77nPU7tjZaL7V1vLMeuZw0N5hveP Ecie74fCOA44SRCFgVzOwBmfEvEWt8YtOxfAZkutMG/zZAB4fVzXH+osvQKBgFs5 zrdYYGUMzWBtb9o+GnexMf9eng7cnmjgyge8l3nfG6Cw+h+6Lv1y1okr5lQMpzeC 8aMZ1PDmlt84084AB46Wh3YyH0W+LJUcw7lTThK5lxBXLEieJs1qTu5x/HDytU5n QX2mFFmxl1z1JjCnZaDo/g+39SCzhZYUIeDBnOCxAoGBAIVhEmrcds4J+HXmUynC p3YXCyWXeRG8ZcvAO3zbbFaW0ae5sK4E3UIixCuMXoroitCp8QaBMhM4joiKYDqw Cj6Chc67SMkMmG4hQO9W1r4TRDcePpfiwCz8Gw14jXo+GLNr8LxvK8IfMObrHY1D HDGV8MJlsvESy1qcGg9tVf/U -----END PRIVATE KEY-----`;
+
+const jwks = `{"keys":[{"use":"sig","kty":"RSA","n":"oExl_gIQmQxfeTVlnv6rKcwL3pSTPg2rte5Dfqju255CEz8U_GT58PoTK93OceVd2b_nEXXW-plxyfqdF9DMNeRFJ1gISqUMequcatc4qeXzzs_VtG2iZX7_zavoS1yBNlrWYfKBhWcg_Jtn5TxhIf7A5IEPEU0GkqDZIjgw4D4AAxXOUalsYBweyIEmcYOiTwO-JC5x-FuaaxQkWScA_ecePqXRI587IOEbc7HIYlKyFwTnQmxLT_74D_etRlTdJoAgwArd3egUTV3d1qv6LUfpLSdyzWG-zqL4pXY1dNOzkIyDOGnwHk8F97cD2SrBVi9AcRIRE3NnjAZUsjqGtw","e":"AQAB"}]}`;
+
+console.log("Setting JWT_PRIVATE_KEY...");
+execSync(`npx convex env set JWT_PRIVATE_KEY -- '${privateKey}'`, { stdio: "inherit" });
+
+console.log("Setting JWKS...");
+execSync(`npx convex env set JWKS '${jwks}'`, { stdio: "inherit" });
+
+console.log("Done!");
