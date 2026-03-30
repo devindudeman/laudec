@@ -22,8 +22,7 @@
   let tab = $state('proxy');
   let loading = $state(true);
   let error = $state(null);
-  let expandedCalls = $state({});
-  let collapsedConversations = $state({});
+  let callViewMode = $state({});  // null | 'conv' | 'inspect' | 'raw'
   let expandedEvents = $state({});
   let insights = $state(null);
 
@@ -85,13 +84,9 @@
     if (t === 'insights') loadInsights();
   }
 
-  function toggleCall(i) {
-    expandedCalls = { ...expandedCalls, [i]: !expandedCalls[i] };
-  }
-
-  function toggleConversation(i, e) {
-    e.stopPropagation();
-    collapsedConversations = { ...collapsedConversations, [i]: !collapsedConversations[i] };
+  function setCallView(i, mode, e) {
+    if (e) e.stopPropagation();
+    callViewMode = { ...callViewMode, [i]: callViewMode[i] === mode ? null : mode };
   }
 
   function toggleEvent(key) {
@@ -268,6 +263,80 @@
   }
 
   const SYSTEM_TAG_RE = /<(system-reminder|available-deferred-tools|tool-use-rules|functions)>[\s\S]*?<\/\1>/g;
+
+  /** Parse request body into structured sections for the INSPECT view */
+  function parseRequestBody(str) {
+    if (!str) return null;
+    let raw;
+    try { raw = JSON.parse(str); } catch { return null; }
+
+    const model = raw.model || null;
+    const max_tokens = raw.max_tokens || null;
+    const thinking = raw.thinking || null;
+    const effort = raw.output_config?.effort || null;
+    const stream = raw.stream ?? null;
+
+    // System blocks
+    const system = (raw.system || []).map((s, i) => ({
+      text: s.text || '',
+      cache_control: s.cache_control || null,
+      preview: (s.text || '').slice(0, 100).replace(/\n/g, ' '),
+    }));
+
+    // Messages
+    const messages = (raw.messages || []).map((m, i) => {
+      const isString = typeof m.content === 'string';
+      const blocks = isString ? [{ type: 'text', text: m.content }] : (m.content || []);
+      const blockCounts = { text: 0, tool_use: 0, tool_result: 0, thinking: 0 };
+      const toolUseNames = [];
+      let textPreview = '';
+
+      for (const b of blocks) {
+        const t = b.type || 'text';
+        if (t in blockCounts) blockCounts[t]++;
+        if (t === 'tool_use' && b.name) toolUseNames.push(b.name);
+        if (t === 'text' && !textPreview) {
+          const clean = (b.text || '').replace(/<[^>]+>[\s\S]*?<\/[^>]+>/g, '').trim();
+          textPreview = clean.slice(0, 80);
+        }
+      }
+
+      return {
+        role: m.role,
+        index: i,
+        blocks,
+        blockCounts,
+        toolUseNames,
+        textPreview,
+        estimatedTokens: Math.ceil(JSON.stringify(m).length / 4),
+      };
+    });
+
+    // Tools grouped by source
+    const tools = (raw.tools || []).map(t => {
+      const name = t.name || '';
+      const mcp = name.match(/^mcp__([^_]+)__(.+)$/);
+      return {
+        name,
+        displayName: mcp ? mcp[2] : name,
+        source: mcp ? 'mcp' : (t.type ? 'builtin' : 'native'),
+        server: mcp ? mcp[1] : null,
+        description: t.description ? (t.description.length > 120 ? t.description.slice(0, 120) + '...' : t.description) : null,
+        input_schema: t.input_schema || null,
+        type: t.type || null,
+      };
+    });
+
+    // Group tools by source
+    const toolGroups = new Map();
+    for (const t of tools) {
+      const key = t.server || t.source;
+      if (!toolGroups.has(key)) toolGroups.set(key, []);
+      toolGroups.get(key).push(t);
+    }
+
+    return { raw, model, max_tokens, thinking, effort, stream, system, messages, tools, toolGroups };
+  }
 
   /** Parse tool_use JSON from response_tool_use field */
   function parseToolCalls(toolUseJson) {
@@ -558,14 +627,11 @@
           {@const toolResults = extractToolResults(c.request_body)}
           {@const hasConversation = !!(parsed?.userText || parsed?.systemBlocks?.length || c.response_text || toolCalls.length || toolResults.length)}
           <div class="proxy-card proxy-card-{label.type.toLowerCase().replace(' ', '-')}" class:proxy-card-error={c.status_code >= 400}>
-            <div class="proxy-summary" onclick={() => toggleCall(i)} role="button" tabindex="0" onkeydown={(e) => e.key === 'Enter' && toggleCall(i)}>
+            <div class="proxy-summary">
               <div class="proxy-summary-left">
                 <span class="proxy-ts">{fmtTime(c.timestamp)}</span>
                 <span class="proxy-type-pill proxy-type-{label.type.toLowerCase().replace(' ', '-')}">{label.detail || label.type}</span>
                 {#if c.status_code >= 400}<span class="proxy-status" style="color: var(--fail)">{c.status_code}</span>{/if}
-                {#if hasConversation}
-                  <button class="proxy-conv-toggle" onclick={(e) => toggleConversation(i, e)}>CONV {collapsedConversations[i] ? '▶' : '▼'}</button>
-                {/if}
               </div>
               <div class="proxy-summary-center">
                 <span class="proxy-model">{c.model || '-'}</span>
@@ -579,11 +645,15 @@
                 {#if label.tools.length > 0}
                   <span class="proxy-tool-tags">{label.tools.map(([name, count]) => count > 1 ? `${name} ×${count}` : name).join(' · ')}</span>
                 {/if}
-                <span class="proxy-expand">RAW {expandedCalls[i] ? '▼' : '▶'}</span>
+                {#if hasConversation}
+                  <button class="proxy-view-btn" class:active={callViewMode[i] === 'conv'} onclick={(e) => setCallView(i, 'conv', e)}>CONV</button>
+                {/if}
+                <button class="proxy-view-btn" class:active={callViewMode[i] === 'inspect'} onclick={(e) => setCallView(i, 'inspect', e)}>INSPECT</button>
+                <button class="proxy-view-btn" class:active={callViewMode[i] === 'raw'} onclick={(e) => setCallView(i, 'raw', e)}>RAW</button>
               </div>
             </div>
 
-            {#if hasConversation && !collapsedConversations[i]}
+            {#if callViewMode[i] === 'conv' && hasConversation}
               <div class="proxy-conversation">
                 <!-- Tool results from previous call -->
                 {#if toolResults.length > 0}
@@ -651,7 +721,128 @@
               </div>
             {/if}
 
-            {#if expandedCalls[i]}
+            {#if callViewMode[i] === 'inspect'}
+              {@const inspected = parseRequestBody(c.request_body)}
+              {#if !inspected}
+                <div class="stub">No request body to inspect</div>
+              {:else}
+                <div class="inspect-view">
+                  <!-- Parameters Strip -->
+                  <div class="inspect-params">
+                    {#if inspected.model}<span class="inspect-pill"><strong>{inspected.model}</strong></span>{/if}
+                    {#if inspected.max_tokens}<span class="inspect-pill">max_tokens: <strong>{inspected.max_tokens.toLocaleString()}</strong></span>{/if}
+                    {#if inspected.thinking}<span class="inspect-pill" class:inspect-pill-on={inspected.thinking.type !== 'disabled'}>thinking: <strong>{inspected.thinking.type || inspected.thinking}</strong></span>{/if}
+                    {#if inspected.effort}<span class="inspect-pill">effort: <strong>{inspected.effort}</strong></span>{/if}
+                    {#if inspected.stream != null}<span class="inspect-pill">stream: <strong>{inspected.stream}</strong></span>{/if}
+                  </div>
+
+                  <!-- System Blocks -->
+                  {#if inspected.system.length > 0}
+                    <div class="inspect-section">
+                      <div class="section-title">System ({inspected.system.length})</div>
+                      {#each inspected.system as sysBlock, si}
+                        <details class="inspect-system-block">
+                          <summary>
+                            <span class="inspect-system-label">System #{si + 1}</span>
+                            {#if sysBlock.cache_control}<span class="inspect-cache-pill">cached</span>{/if}
+                            <span class="inspect-system-preview">{sysBlock.preview}</span>
+                          </summary>
+                          <div class="inspect-system-body">{sysBlock.text}</div>
+                        </details>
+                      {/each}
+                    </div>
+                  {/if}
+
+                  <!-- Messages -->
+                  {#if inspected.messages.length > 0}
+                    <div class="inspect-section">
+                      <div class="section-title">Messages ({inspected.messages.length})</div>
+                      {#each inspected.messages as msg}
+                        <details class="inspect-msg"
+                          class:inspect-msg-has-tool-use={msg.blockCounts.tool_use > 0}
+                          class:inspect-msg-has-tool-result={msg.blockCounts.tool_result > 0}>
+                          <summary>
+                            <span class="inspect-msg-index">#{msg.index + 1}</span>
+                            <span class="proxy-msg-label {msg.role === 'user' ? 'proxy-msg-label-user' : 'proxy-msg-label-model'}">{msg.role}</span>
+                            <span class="inspect-block-count">
+                              {#each Object.entries(msg.blockCounts).filter(([,v]) => v > 0) as [type, count]}
+                                {count} {type}{' '}
+                              {/each}
+                            </span>
+                            {#if msg.toolUseNames.length > 0}
+                              <span class="inspect-msg-tools">({msg.toolUseNames.join(', ')})</span>
+                            {/if}
+                            <span class="inspect-msg-tokens">~{fmtTokens(msg.estimatedTokens)}</span>
+                            {#if msg.textPreview}
+                              <span class="inspect-msg-preview">{msg.textPreview}</span>
+                            {/if}
+                          </summary>
+                          <div class="inspect-msg-body">
+                            {#each msg.blocks as block}
+                              <div class="inspect-msg-block">
+                                {#if block.type === 'text'}
+                                  <div class="inspect-text-block markdown">{@html renderMarkdown(block.text || '')}</div>
+                                {:else if block.type === 'thinking'}
+                                  <div class="inspect-thinking">{block.thinking || ''}</div>
+                                {:else if block.type === 'tool_use'}
+                                  <div class="inspect-tool-use-block">
+                                    <span class="proxy-msg-label proxy-msg-label-tool-call">TOOL</span>
+                                    <strong>{block.name}</strong>
+                                    {#if block.input}
+                                      <span class="proxy-tool-input">{summarizeToolInput(block.input)}</span>
+                                    {/if}
+                                  </div>
+                                {:else if block.type === 'tool_result'}
+                                  <div class="inspect-tool-result-block" class:inspect-tool-result-error={block.is_error}>
+                                    <span class="proxy-msg-label proxy-msg-label-tool-result">RESULT{#if block.is_error} (ERROR){/if}</span>
+                                    {#if typeof block.content === 'string'}
+                                      {block.content.length > 500 ? block.content.slice(0, 500) + '...' : block.content}
+                                    {:else if Array.isArray(block.content)}
+                                      {block.content.filter(b => b.type === 'text').map(b => b.text).join('\n').slice(0, 500)}
+                                    {/if}
+                                  </div>
+                                {/if}
+                              </div>
+                            {/each}
+                          </div>
+                        </details>
+                      {/each}
+                    </div>
+                  {/if}
+
+                  <!-- Tools Inventory -->
+                  {#if inspected.tools.length > 0}
+                    <div class="inspect-section">
+                      <div class="section-title">Tools ({inspected.tools.length})</div>
+                      {#each [...inspected.toolGroups.entries()] as [groupKey, groupTools]}
+                        <div class="inspect-tool-group">
+                          <div class="inspect-tool-group-label">
+                            {#if groupKey === 'native' || groupKey === 'builtin'}
+                              {groupKey} ({groupTools.length})
+                            {:else}
+                              MCP: {groupKey} ({groupTools.length})
+                            {/if}
+                          </div>
+                          <div class="inspect-tool-pills">
+                            {#each groupTools as t}
+                              <details class="inspect-tool-pill">
+                                <summary>{t.displayName}</summary>
+                                <div class="inspect-tool-detail">
+                                  {#if t.description}<div class="inspect-tool-desc">{t.description}</div>{/if}
+                                  {#if t.input_schema}<pre class="json-hl">{@html prettyJsonHtml(JSON.stringify(t.input_schema))}</pre>{/if}
+                                </div>
+                              </details>
+                            {/each}
+                          </div>
+                        </div>
+                      {/each}
+                    </div>
+                  {/if}
+                </div>
+              {/if}
+            {/if}
+
+            {#if callViewMode[i] === 'raw'}
               <div class="proxy-details">
                 <div class="proxy-details-label">Raw</div>
                 {#if c.request_headers}
