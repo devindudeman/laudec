@@ -269,6 +269,64 @@
 
   const SYSTEM_TAG_RE = /<(system-reminder|available-deferred-tools|tool-use-rules|functions)>[\s\S]*?<\/\1>/g;
 
+  /** Parse tool_use JSON from response_tool_use field */
+  function parseToolCalls(toolUseJson) {
+    if (!toolUseJson) return [];
+    try { return JSON.parse(toolUseJson); } catch { return []; }
+  }
+
+  /** Extract tool_result blocks from the last user message in request body */
+  function extractToolResults(requestBody) {
+    if (!requestBody) return [];
+    try {
+      const body = JSON.parse(requestBody);
+      const msgs = body.messages || [];
+      // Find the last user message
+      for (let i = msgs.length - 1; i >= 0; i--) {
+        if (msgs[i].role === 'user' && Array.isArray(msgs[i].content)) {
+          return msgs[i].content
+            .filter(b => b.type === 'tool_result')
+            .map(b => ({
+              tool_use_id: b.tool_use_id,
+              content: typeof b.content === 'string'
+                ? b.content
+                : Array.isArray(b.content)
+                  ? b.content.filter(c => c.type === 'text').map(c => c.text).join('\n')
+                  : '',
+              is_error: b.is_error || false,
+            }));
+        }
+      }
+    } catch {}
+    return [];
+  }
+
+  /** Format a tool name for display — detect MCP tools */
+  function fmtToolName(name) {
+    if (!name) return '?';
+    const mcp = name.match(/^mcp__([^_]+)__(.+)$/);
+    if (mcp) return { server: mcp[1], tool: mcp[2], isMcp: true };
+    return { tool: name, isMcp: false };
+  }
+
+  /** Summarize tool input — show most relevant fields */
+  function summarizeToolInput(input) {
+    if (!input || typeof input !== 'object') return '';
+    // Common patterns
+    if (input.command) return input.command;
+    if (input.file_path) return input.file_path;
+    if (input.pattern) return input.pattern + (input.path ? ` in ${input.path}` : '');
+    if (input.query) return input.query;
+    if (input.prompt) return input.prompt.length > 100 ? input.prompt.slice(0, 100) + '...' : input.prompt;
+    if (input.content && typeof input.content === 'string') return input.content.length > 100 ? input.content.slice(0, 100) + '...' : input.content;
+    // Generic: show first few key=value pairs
+    const entries = Object.entries(input).slice(0, 3);
+    return entries.map(([k, v]) => {
+      const s = typeof v === 'string' ? v : JSON.stringify(v);
+      return `${k}: ${s.length > 60 ? s.slice(0, 60) + '...' : s}`;
+    }).join(', ');
+  }
+
   /** Split user message into { userText, systemBlocks } */
   function splitUserQuery(requestBody) {
     if (!requestBody) return null;
@@ -496,7 +554,9 @@
         {#each calls as c, i}
           {@const parsed = splitUserQuery(c.request_body)}
           {@const label = callLabels[i]}
-          {@const hasConversation = !!(parsed?.userText || parsed?.systemBlocks?.length || c.response_text)}
+          {@const toolCalls = parseToolCalls(c.response_tool_use)}
+          {@const toolResults = extractToolResults(c.request_body)}
+          {@const hasConversation = !!(parsed?.userText || parsed?.systemBlocks?.length || c.response_text || toolCalls.length || toolResults.length)}
           <div class="proxy-card proxy-card-{label.type.toLowerCase().replace(' ', '-')}" class:proxy-card-error={c.status_code >= 400}>
             <div class="proxy-summary" onclick={() => toggleCall(i)} role="button" tabindex="0" onkeydown={(e) => e.key === 'Enter' && toggleCall(i)}>
               <div class="proxy-summary-left">
@@ -525,6 +585,19 @@
 
             {#if hasConversation && !collapsedConversations[i]}
               <div class="proxy-conversation">
+                <!-- Tool results from previous call -->
+                {#if toolResults.length > 0}
+                  {#each toolResults as tr}
+                    <div class="proxy-msg proxy-msg-tool-result" class:proxy-msg-tool-error={tr.is_error}>
+                      <span class="proxy-msg-label proxy-msg-label-tool-result">TOOL RESULT{#if tr.is_error} (ERROR){/if}</span>
+                      {#if tr.content}
+                        <div class="proxy-msg-text proxy-tool-output">{tr.content.length > 500 ? tr.content.slice(0, 500) + '...' : tr.content}</div>
+                      {/if}
+                    </div>
+                  {/each}
+                {/if}
+
+                <!-- User/instruction message -->
                 {#if parsed?.userText || parsed?.systemBlocks?.length}
                   <div class="proxy-msg proxy-msg-user">
                     <span class="proxy-msg-label {label.type === 'SUBAGENT' ? 'proxy-msg-label-agent' : 'proxy-msg-label-user'}">
@@ -549,11 +622,31 @@
                     {/if}
                   </div>
                 {/if}
+
+                <!-- Model response text -->
                 {#if c.response_text}
                   <div class="proxy-msg proxy-msg-model">
                     <span class="proxy-msg-label proxy-msg-label-model">MODEL</span>
                     <div class="proxy-msg-text markdown">{@html renderMarkdown(c.response_text)}</div>
                   </div>
+                {/if}
+
+                <!-- Tool calls from model response -->
+                {#if toolCalls.length > 0}
+                  {#each toolCalls as tc}
+                    {@const tn = fmtToolName(tc.name)}
+                    <div class="proxy-msg proxy-msg-tool-call">
+                      <span class="proxy-msg-label proxy-msg-label-tool-call">
+                        {#if tn.isMcp}MCP{:else}TOOL{/if}
+                      </span>
+                      <div class="proxy-tool-call-content">
+                        <span class="proxy-tool-name">{#if tn.isMcp}<span class="proxy-tool-server">{tn.server}/</span>{/if}{tn.tool}</span>
+                        {#if summarizeToolInput(tc.input)}
+                          <span class="proxy-tool-input">{summarizeToolInput(tc.input)}</span>
+                        {/if}
+                      </div>
+                    </div>
+                  {/each}
                 {/if}
               </div>
             {/if}

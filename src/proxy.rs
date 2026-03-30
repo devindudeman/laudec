@@ -147,8 +147,8 @@ async fn stream_response(
         if log_responses {
             let body_str = String::from_utf8_lossy(&buffer);
             let (model, inp, out, cr, cw) = parse_sse_usage(&body_str);
-            // Parse response text at capture time — no more query-time SSE parsing
             let response_text = parse_sse_text(&body_str);
+            let tool_use = parse_sse_tool_use(&body_str);
             let headers_json = redacted_headers(&resp_headers_for_log, redact);
 
             let _ = db
@@ -167,6 +167,11 @@ async fn stream_response(
                         None
                     } else {
                         Some(&response_text)
+                    },
+                    if tool_use.is_empty() {
+                        None
+                    } else {
+                        Some(&tool_use)
                     },
                 )
                 .await;
@@ -216,6 +221,7 @@ async fn buffered_response(
                 cr,
                 cw,
                 None, // non-SSE responses don't have parseable text
+                None, // non-SSE responses don't have tool_use
             )
             .await;
     }
@@ -318,6 +324,61 @@ pub fn parse_sse_text(body: &str) -> String {
         }
     }
     text
+}
+
+/// Extract tool_use blocks from SSE response.
+/// Returns JSON array: [{"name":"Bash","input":{"command":"ls"}}]
+pub fn parse_sse_tool_use(body: &str) -> String {
+    let mut tools: Vec<serde_json::Value> = Vec::new();
+    let mut current_name: Option<String> = None;
+    let mut current_input = String::new();
+
+    for line in body.lines() {
+        let Some(data) = line.strip_prefix("data: ") else {
+            continue;
+        };
+        let Ok(json) = serde_json::from_str::<serde_json::Value>(data) else {
+            continue;
+        };
+
+        match json.get("type").and_then(|v| v.as_str()) {
+            Some("content_block_start") => {
+                if let Some(block) = json.get("content_block") {
+                    if block.get("type").and_then(|v| v.as_str()) == Some("tool_use") {
+                        current_name =
+                            block.get("name").and_then(|v| v.as_str()).map(String::from);
+                        current_input.clear();
+                    }
+                }
+            }
+            Some("content_block_delta") => {
+                if current_name.is_some() {
+                    if let Some(partial) = json
+                        .get("delta")
+                        .and_then(|d| d.get("partial_json"))
+                        .and_then(|v| v.as_str())
+                    {
+                        current_input.push_str(partial);
+                    }
+                }
+            }
+            Some("content_block_stop") => {
+                if let Some(name) = current_name.take() {
+                    let input: serde_json::Value =
+                        serde_json::from_str(&current_input).unwrap_or(serde_json::Value::Null);
+                    tools.push(serde_json::json!({ "name": name, "input": input }));
+                    current_input.clear();
+                }
+            }
+            _ => {}
+        }
+    }
+
+    if tools.is_empty() {
+        String::new()
+    } else {
+        serde_json::to_string(&tools).unwrap_or_default()
+    }
 }
 
 fn parse_json_usage(body: &str) -> Usage {

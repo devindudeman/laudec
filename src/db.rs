@@ -120,6 +120,7 @@ impl Db {
             "ALTER TABLE sessions ADD COLUMN tool_uses INTEGER",
             "ALTER TABLE sessions ADD COLUMN cc_session_id TEXT",
             "ALTER TABLE api_calls ADD COLUMN response_text TEXT",
+            "ALTER TABLE api_calls ADD COLUMN response_tool_use TEXT",
             "ALTER TABLE sessions ADD COLUMN first_prompt TEXT",
             "ALTER TABLE sessions ADD COLUMN error_count INTEGER DEFAULT 0",
         ] {
@@ -172,6 +173,7 @@ impl Db {
         cache_read: Option<i64>,
         cache_write: Option<i64>,
         response_text: Option<&str>,
+        response_tool_use: Option<&str>,
     ) -> Result<()> {
         let conn = self.conn.clone();
         let id = id.to_string();
@@ -179,6 +181,7 @@ impl Db {
         let response_headers = response_headers.map(String::from);
         let model = model.map(String::from);
         let response_text = response_text.map(String::from);
+        let response_tool_use = response_tool_use.map(String::from);
 
         tokio::task::spawn_blocking(move || {
             let conn = conn.lock().map_err(|e| anyhow::anyhow!("db lock: {e}"))?;
@@ -186,12 +189,13 @@ impl Db {
                 "UPDATE api_calls
                  SET status_code = ?1, response_body = ?2, response_headers = ?3,
                      latency_ms = ?4, model = ?5, input_tokens = ?6, output_tokens = ?7,
-                     cache_read = ?8, cache_write = ?9, response_text = ?10
-                 WHERE id = ?11",
+                     cache_read = ?8, cache_write = ?9, response_text = ?10,
+                     response_tool_use = ?11
+                 WHERE id = ?12",
                 rusqlite::params![
                     status_code as i64, response_body, response_headers,
                     latency_ms, model, input_tokens, output_tokens,
-                    cache_read, cache_write, response_text, id
+                    cache_read, cache_write, response_text, response_tool_use, id
                 ],
             )?;
             Ok(())
@@ -533,7 +537,7 @@ impl Db {
             let conn = conn.lock().map_err(|e| anyhow::anyhow!("db lock: {e}"))?;
             let select = "SELECT timestamp, method, path, status_code, latency_ms, model,
                             input_tokens, output_tokens, cache_read, cache_write,
-                            response_text, request_body, response_body,
+                            response_text, response_tool_use, request_body, response_body,
                             request_headers, response_headers
                      FROM api_calls";
             if let Some(ref sid) = session_id {
@@ -956,10 +960,11 @@ fn row_to_api_call(row: &rusqlite::Row) -> rusqlite::Result<ApiCallRecord> {
         cache_read: row.get(8)?,
         cache_write: row.get(9)?,
         response_text: row.get(10)?,
-        request_body: row.get(11)?,
-        response_body: row.get(12)?,
-        request_headers: row.get(13)?,
-        response_headers: row.get(14)?,
+        response_tool_use: row.get(11)?,
+        request_body: row.get(12)?,
+        response_body: row.get(13)?,
+        request_headers: row.get(14)?,
+        response_headers: row.get(15)?,
     })
 }
 
@@ -1026,6 +1031,7 @@ pub struct ApiCallRecord {
     pub cache_read: Option<i64>,
     pub cache_write: Option<i64>,
     pub response_text: Option<String>,
+    pub response_tool_use: Option<String>,
     pub request_body: Option<String>,
     pub response_body: Option<String>,
     pub request_headers: Option<String>,
