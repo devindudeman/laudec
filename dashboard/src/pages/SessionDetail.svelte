@@ -636,7 +636,8 @@
           {@const label = callLabels[i]}
           {@const toolCalls = parseToolCalls(c.response_tool_use)}
           {@const toolResults = extractToolResults(c.request_body)}
-          {@const hasConversation = !!(parsed?.userText || parsed?.systemBlocks?.length || c.response_text || toolCalls.length || toolResults.length)}
+          {@const isNonConversation = label.type === 'QUOTA' || label.type === 'TOKEN COUNT'}
+          {@const hasConversation = !isNonConversation && !!(parsed?.userText || parsed?.systemBlocks?.length || c.response_text || toolCalls.length || toolResults.length)}
           {@const viewMode = effectiveView(i, hasConversation)}
           <div class="proxy-card proxy-card-{label.type.toLowerCase().replace(' ', '-')}" class:proxy-card-error={c.status_code >= 400}>
             <div class="proxy-summary">
