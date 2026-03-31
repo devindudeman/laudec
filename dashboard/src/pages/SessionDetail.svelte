@@ -515,6 +515,11 @@
     try { body = JSON.parse(call.request_body || '{}'); } catch {}
 
     // Tier 1: Type
+    if (call.path === '/' && (!call.model || call.status_code === 404)) {
+      label.type = 'PROBE';
+      label.detail = 'CONNECTIVITY';
+      return label;
+    }
     if (body.max_tokens === 1) {
       label.type = 'QUOTA';
       return label;
@@ -636,7 +641,7 @@
           {@const label = callLabels[i]}
           {@const toolCalls = parseToolCalls(c.response_tool_use)}
           {@const toolResults = extractToolResults(c.request_body)}
-          {@const isNonConversation = label.type === 'QUOTA' || label.type === 'TOKEN COUNT'}
+          {@const isNonConversation = label.type === 'QUOTA' || label.type === 'TOKEN COUNT' || label.type === 'PROBE'}
           {@const hasConversation = !isNonConversation && !!(parsed?.userText || parsed?.systemBlocks?.length || c.response_text || toolCalls.length || toolResults.length)}
           {@const viewMode = effectiveView(i, hasConversation)}
           <div class="proxy-card proxy-card-{label.type.toLowerCase().replace(' ', '-')}" class:proxy-card-error={c.status_code >= 400}>

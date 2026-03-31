@@ -401,6 +401,8 @@ td.cost-high { color: var(--fail); font-weight: 700; }
 .proxy-type-quota { background: var(--muted); color: var(--surface); }
 .proxy-type-token-count { background: var(--muted); color: var(--surface); }
 .proxy-type-unknown { background: #ddd; color: var(--fg); }
+.proxy-type-probe { background: #ddd; color: var(--muted); }
+.proxy-card-probe { border-left-color: #ddd; }
 
 /* proxy summary grouped layout */
 .proxy-summary-left, .proxy-summary-center, .proxy-summary-right {
