@@ -86,7 +86,18 @@
 
   function setCallView(i, mode, e) {
     if (e) e.stopPropagation();
-    callViewMode = { ...callViewMode, [i]: callViewMode[i] === mode ? null : mode };
+    // If clicking the active mode (or the default), collapse. Otherwise switch.
+    const current = callViewMode[i] ?? null;
+    callViewMode = { ...callViewMode, [i]: current === mode ? 'collapsed' : mode };
+  }
+
+  /** Resolve effective view mode — CONV is default for cards with conversation data */
+  function effectiveView(i, hasConv) {
+    const mode = callViewMode[i];
+    if (mode === 'collapsed') return null;
+    if (mode) return mode;
+    // Default: show CONV if the card has conversation content
+    return hasConv ? 'conv' : null;
   }
 
   function toggleEvent(key) {
@@ -626,6 +637,7 @@
           {@const toolCalls = parseToolCalls(c.response_tool_use)}
           {@const toolResults = extractToolResults(c.request_body)}
           {@const hasConversation = !!(parsed?.userText || parsed?.systemBlocks?.length || c.response_text || toolCalls.length || toolResults.length)}
+          {@const viewMode = effectiveView(i, hasConversation)}
           <div class="proxy-card proxy-card-{label.type.toLowerCase().replace(' ', '-')}" class:proxy-card-error={c.status_code >= 400}>
             <div class="proxy-summary">
               <div class="proxy-summary-left">
@@ -646,14 +658,14 @@
                   <span class="proxy-tool-tags">{label.tools.map(([name, count]) => count > 1 ? `${name} ×${count}` : name).join(' · ')}</span>
                 {/if}
                 {#if hasConversation}
-                  <button class="proxy-view-btn" class:active={callViewMode[i] === 'conv'} onclick={(e) => setCallView(i, 'conv', e)}>CONV</button>
+                  <button class="proxy-view-btn" class:active={viewMode === 'conv'} onclick={(e) => setCallView(i, 'conv', e)}>CONV</button>
                 {/if}
-                <button class="proxy-view-btn" class:active={callViewMode[i] === 'inspect'} onclick={(e) => setCallView(i, 'inspect', e)}>INSPECT</button>
-                <button class="proxy-view-btn" class:active={callViewMode[i] === 'raw'} onclick={(e) => setCallView(i, 'raw', e)}>RAW</button>
+                <button class="proxy-view-btn" class:active={viewMode === 'inspect'} onclick={(e) => setCallView(i, 'inspect', e)}>INSPECT</button>
+                <button class="proxy-view-btn" class:active={viewMode === 'raw'} onclick={(e) => setCallView(i, 'raw', e)}>RAW</button>
               </div>
             </div>
 
-            {#if callViewMode[i] === 'conv' && hasConversation}
+            {#if viewMode === 'conv' && hasConversation}
               <div class="proxy-conversation">
                 <!-- Tool results from previous call -->
                 {#if toolResults.length > 0}
@@ -721,7 +733,7 @@
               </div>
             {/if}
 
-            {#if callViewMode[i] === 'inspect'}
+            {#if viewMode === 'inspect'}
               {@const inspected = parseRequestBody(c.request_body)}
               {#if !inspected}
                 <div class="stub">No request body to inspect</div>
@@ -842,7 +854,7 @@
               {/if}
             {/if}
 
-            {#if callViewMode[i] === 'raw'}
+            {#if viewMode === 'raw'}
               <div class="proxy-details">
                 <div class="proxy-details-label">Raw</div>
                 {#if c.request_headers}
