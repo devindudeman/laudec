@@ -36,14 +36,19 @@ That's it. laudec launches Claude Code with instrumentation wired up automatical
 
 ### Proxy Tab
 Full API traffic inspection for every request to Anthropic:
-- Calls classified by type (MAIN, SUBAGENT, QUOTA, TOKEN COUNT) with color-coded pills
-- MAIN calls labeled by turn number or tool loop
-- Subagent calls tagged with role (EXPLORE, WEB SEARCH, CC GUIDE)
-- User query and model response rendered as markdown, collapsible per card
-- Tool usage summary per call (e.g. `Read x3 · Edit x2`)
-- Error calls (status >= 400) highlighted with red card tint
-- System-injected blocks (system reminders, tool rules) in collapsible sections
-- Request/response bodies with JSON syntax highlighting
+- Calls classified by type (MAIN, SUBAGENT, QUOTA, TOKEN COUNT, CONNECTIVITY) with color-coded pills
+- MAIN calls labeled by turn number (TURN 1, TURN 2) or continuation (TURN 1+)
+- Subagent calls tagged with role (EXPLORE, WEB SEARCH, CC GUIDE) and labeled INSTRUCTION instead of YOU
+- Connectivity probes (HEAD /) identified and labeled
+- **Three view modes per card:** CONV (default for conversation calls), INSPECT, RAW
+- **CONV view:** user query, model response as markdown, tool calls (amber) with input summary, tool results (purple) with output preview, system blocks collapsible
+- **INSPECT view:** structured request body broken into 4 sections:
+  - Parameters strip (model, max_tokens, thinking, effort, stream)
+  - System blocks (collapsible with cache indicators)
+  - Messages (compact rows with role, block counts, token estimates, expandable for full content including thinking blocks)
+  - Tools inventory (grouped by source: native vs MCP by server, clickable pills for schema)
+- **RAW view:** collapsible JSON tree with smart previews (identity values for arrays, light-background syntax highlighting)
+- Tool calls extracted from SSE responses at capture time (MCP tools show server/tool format)
 - Token counts, cache, latency, model, and status per call
 
 ### Events Tab

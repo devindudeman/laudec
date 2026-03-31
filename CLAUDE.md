@@ -43,6 +43,26 @@ Claude Code  ──▶  laudec proxy (Axum)  ──▶  Anthropic API
 | `src/settings.rs` | Temporarily patches CC settings, restores on drop |
 | `dashboard/` | Svelte 5 SPA (vite build → dashboard/dist/, embedded via rust-embed) |
 
+## Dashboard Pages
+
+| Page | Route | Description |
+|------|-------|-------------|
+| Sessions | `#/` | Session list with cost, duration, model, call count |
+| SessionDetail | `#/session/{id}` | Proxy, Events, Metrics, Insights tabs |
+| Config | `#/config` | Read-only config viewer with source banner |
+
+### Proxy tab call classification
+- `PROBE` (CONNECTIVITY) — HEAD / reachability check (404 expected)
+- `QUOTA` — max_tokens=1 billing check
+- `TOKEN COUNT` — /v1/messages/count_tokens calls
+- `MAIN` — thinking-enabled calls, labeled TURN N or TURN N+ (continuation)
+- `SUBAGENT` — non-thinking calls with system+tools (EXPLORE, WEB SEARCH, CC GUIDE)
+
+### Proxy tab view modes
+- `CONV` — conversation view (default for MAIN/SUBAGENT), shows user/model/tool exchanges
+- `INSPECT` — structured request body: parameters, system blocks, messages, tool inventory
+- `RAW` — collapsible JSON tree with headers and bodies
+
 ## Build
 
 ```bash
